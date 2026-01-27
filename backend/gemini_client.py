@@ -66,11 +66,26 @@ async def generate_exam(num_questions: int, context_text: str = None, topic: str
     # Reduced context limit to avoid hitting TPM limits quickly on free tier
     MAX_CONTEXT_CHARS = 30000 
     
+    import re
+    def clean_text(text):
+        if not text: return ""
+        # Replace multiple newlines with single newline
+        text = re.sub(r'\n+', '\n', text)
+        # Replace multiple spaces with single space
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
+
     # PRIORITY LOGIC
     if context_text:
-        prompt += f"\n\nFUENTE DE CONTEXTO (PRIORIDAD 1):\nUsa EXCLUSIVAMENTE el siguiente texto para generar las preguntas:\n{context_text[:MAX_CONTEXT_CHARS]}"
+        cleaned_context = clean_text(context_text[:MAX_CONTEXT_CHARS])
+        prompt += f"\n\nFUENTE DE CONTEXTO (PRIORIDAD 1):\nUsa EXCLUSIVAMENTE el siguiente texto para generar las preguntas:\n{cleaned_context}"
+        
+        if len(cleaned_context) > 5000:
+             prompt += "\n\nNOTA: El texto es extenso. Céntrate en los PUNTOS CLAVE y conceptos más importantes. Evita detalles triviales para maximizar la calidad de las preguntas."
+
     elif topic and topic.strip():
-        prompt += f"\n\nFUENTE DE TEMA (PRIORIDAD 2):\nGenera preguntas EXCLUSIVAMENTE sobre el siguiente tema: '{topic}'.\nUsa tu conocimiento general para crear preguntas relevantes sobre este tema."
+        cleaned_topic = clean_text(topic)
+        prompt += f"\n\nFUENTE DE TEMA (PRIORIDAD 2):\nGenera preguntas EXCLUSIVAMENTE sobre el siguiente tema: '{cleaned_topic}'.\nUsa tu conocimiento general para crear preguntas relevantes sobre este tema."
     else:
         prompt += "\n\nFUENTE POR DEFECTO (PRIORIDAD 3):\nNO HAY CONTEXTO NI TEMA ESPECÍFICO. Genera preguntas variadas del temario oficial de Técnicos Auxiliares de Informática (TAI)."
 
