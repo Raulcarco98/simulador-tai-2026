@@ -1,0 +1,26 @@
+{
+    "name": "simulador-tai-2026",
+    "version": "1.0.0",
+    "description": "Simulador TAI Pro 2026",
+    "main": "electron/main.js",
+    "scripts": {
+        "start": "concurrently \"npm run backend\" \"npm run frontend\" \"npm run electron:wait\"",
+        "backend": "cd backend && uvicorn main:app --reload --port 8000",
+        "frontend": "cd frontend && npm run dev",
+        "electron": "electron .",
+        "electron:wait": "wait-on http://localhost:5173 && electron ."
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {
+        "concurrently": "^8.2.2",
+        "electron": "^28.1.0",
+        "wait-on": "^7.2.0"
+    },
+    "dependencies": {
+        "@tailwindcss/postcss": "^4.1.18",
+        "lucide-react": "^0.563.0",
+        "postcss": "^8.5.6"
+    }
+}
