@@ -27,21 +27,23 @@ if API_KEY:
         generation_config=generation_config,
     )
 
-def get_base_prompt(num_questions):
+def get_base_prompt(num_questions, difficulty):
     return f"""
-    Actúa como un Preparador de Oposiciones para TAI (Técnicos Auxiliares de Informática) con 20 años de experiencia.
+    Actúa como un Preparador de Oposiciones y Experto en Evaluación con 20 años de experiencia.
     Genera un examen tipo test de {num_questions} preguntas.
+    
+    NIVEL DE DIFICULTAD: {difficulty.upper()}
+    - Básico: Conceptos fundamentales y definiciones.
+    - Intermedio: Relación de conceptos y casos prácticos estándar.
+    - Experto: Detalles técnicos profundos, excepciones y casos complejos.
 
     INSTRUCCIONES DE ESTILO:
-    - Las preguntas deben ser técnicas, precisas y desafiantes, nivel real de oposición.
+    - Las preguntas deben ser técnicas, precisas y desafiantes.
     - La EXPLICACIÓN debe ser DIDÁCTICA y DETALLADA. 
     - ESTRUCTURA DE LA EXPLICACIÓN:
         1. Confirma por qué la opción correcta es acertada (fundamento técnico/teórico).
         2. Explica brevemente por qué las otras opciones son incorrectas (trampas típicas, conceptos confusos).
     
-    CRITERIO DE CONTEXTO:
-    Si hay TEXTO DE CONTEXTO, úsalo como fuente primaria. Si no, usa el temario oficial actual.
-
     Formato JSON requerido (Array de objetos):
     [
         {{
@@ -49,25 +51,28 @@ def get_base_prompt(num_questions):
             "question": "Enunciado técnico...",
             "options": ["Opción A", "Opción B", "Opción C", "Opción D"],
             "correct_index": 0,
-            "explanation": "Correcta: [Razón técnica confirmada]. Incorrectas: B no es válida porque... C se refiere a..."
+            "explanation": "Correcta: [Razón técnica]..."
         }},
         ...
     ]
     """
 
-async def generate_exam(num_questions: int, context_text: str = None):
+async def generate_exam(num_questions: int, context_text: str = None, topic: str = None, difficulty: str = "Intermedio"):
     if not API_KEY:
          return [{"question": "Error: API Key no configurada", "options": ["A", "B", "C", "D"], "correct_index": 0, "explanation": "Configura .env"}]
 
-    prompt = get_base_prompt(num_questions)
+    prompt = get_base_prompt(num_questions, difficulty)
     
     # Reduced context limit to avoid hitting TPM limits quickly on free tier
     MAX_CONTEXT_CHARS = 30000 
     
+    # PRIORITY LOGIC
     if context_text:
-        prompt += f"\n\nTEXTO DE CONTEXTO (Resumido):\n{context_text[:MAX_CONTEXT_CHARS]}"
+        prompt += f"\n\nFUENTE DE CONTEXTO (PRIORIDAD 1):\nUsa EXCLUSIVAMENTE el siguiente texto para generar las preguntas:\n{context_text[:MAX_CONTEXT_CHARS]}"
+    elif topic and topic.strip():
+        prompt += f"\n\nFUENTE DE TEMA (PRIORIDAD 2):\nGenera preguntas EXCLUSIVAMENTE sobre el siguiente tema: '{topic}'.\nUsa tu conocimiento general para crear preguntas relevantes sobre este tema."
     else:
-        prompt += "\n\nNO HAY CONTEXTO ESPECÍFICO. Genera preguntas variadas del temario general."
+        prompt += "\n\nFUENTE POR DEFECTO (PRIORIDAD 3):\nNO HAY CONTEXTO NI TEMA ESPECÍFICO. Genera preguntas variadas del temario oficial de Técnicos Auxiliares de Informática (TAI)."
 
     max_retries = 3
     base_delay = 2

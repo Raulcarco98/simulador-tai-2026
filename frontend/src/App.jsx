@@ -24,6 +24,11 @@ function App() {
 
     const formData = new FormData();
     formData.append("num_questions", settings.numQuestions);
+    formData.append("difficulty", settings.difficulty || "Intermedio");
+
+    if (settings.topic) {
+      formData.append("topic", settings.topic);
+    }
     if (settings.file) {
       formData.append("file", settings.file);
     }

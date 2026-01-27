@@ -36,7 +36,9 @@ def read_root():
 @app.post("/generate-exam")
 async def create_exam(
     file: UploadFile = File(None),
-    num_questions: int = Form(10)
+    num_questions: int = Form(10),
+    topic: str = Form(None),
+    difficulty: str = Form("Intermedio")
 ):
     context_text = None
     
@@ -50,7 +52,7 @@ async def create_exam(
         if context_text and len(context_text) < 50:
              print("Warning: Extracted text is too short or empty.")
     
-    print(f"Generating exam with {num_questions} questions. Context length: {len(context_text) if context_text else 0}")
+    print(f"Generating -> Questions: {num_questions} | Difficulty: {difficulty} | Topic: {topic or 'Default'}")
     
-    questions = await generate_exam(num_questions, context_text)
+    questions = await generate_exam(num_questions, context_text, topic, difficulty)
     return questions
