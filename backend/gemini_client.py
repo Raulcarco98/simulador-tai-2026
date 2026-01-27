@@ -40,9 +40,14 @@ def get_base_prompt(num_questions, difficulty):
     INSTRUCCIONES DE ESTILO:
     - Las preguntas deben ser técnicas, precisas y desafiantes.
     - La EXPLICACIÓN debe ser DIDÁCTICA y DETALLADA. 
-    - ESTRUCTURA DE LA EXPLICACIÓN:
-        1. Confirma por qué la opción correcta es acertada (fundamento técnico/teórico).
-        2. Explica brevemente por qué las otras opciones son incorrectas (trampas típicas, conceptos confusos).
+    
+    CRITÉRIO DE INTEGRIDAD JSON (CRÍTICO):
+    - "correct_index" DEBE corresponder EXACTAMENTE a la posición en el array "options" (0 para A, 1 para B, etc.).
+    - La "explanation" debe decir explícitamente "La respuesta correcta es [Letra]..." y coincidir con "correct_index".
+    
+    ESTRUCTURA DE LA EXPLICACIÓN:
+        1. "La respuesta correcta es [Letra] porque... [fundamento técnico]".
+        2. Explica por qué las demás son incorrectas.
     
     Formato JSON requerido (Array de objetos):
     [

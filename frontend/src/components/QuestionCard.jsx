@@ -56,7 +56,7 @@ export default function QuestionCard({
                             disabled={showResult}
                             className={`w-full text-left p-4 rounded-xl border transition-all duration-300 flex items-center ${stateClass}`}
                         >
-                            <span className="w-8 h-8 rounded-full border border-current/30 flex items-center justify-center mr-4 text-sm font-bold opacity-70">
+                            <span className="w-8 h-8 rounded-full border border-current/30 flex items-center justify-center mr-4 text-sm font-bold opacity-70 transition-all">
                                 {String.fromCharCode(65 + index)}
                             </span>
                             <span className="flex-1">{option}</span>
