@@ -88,36 +88,37 @@ async def generate_exam(num_questions: int, context_text: str = None, topic: str
 
     prompt = get_base_prompt(num_questions, difficulty)
     
-    # Adjusted context limit to balance Coverage vs Rate Limits (429)
-    MAX_CONTEXT_CHARS = 40000 
-    
-    import re
-    def clean_text(text):
-        if not text: return ""
-        # Replace multiple newlines with single newline
-        text = re.sub(r'\n+', '\n', text)
-        # Replace multiple spaces with single space
-        text = re.sub(r'\s+', ' ', text)
-        return text.strip()
-
-    # PRIORITY LOGIC
-    if context_text:
-        cleaned_context = clean_text(context_text[:MAX_CONTEXT_CHARS])
-        prompt += f"\n\nFUENTE DE CONTEXTO (PRIORIDAD 1):\nUsa EXCLUSIVAMENTE el siguiente texto para generar las preguntas. Lee hasta el final:\n{cleaned_context}"
-        
-        if len(cleaned_context) > 5000:
-             prompt += "\n\nNOTA: Texto extenso detectado. RECUERDA llegar hasta el final del documento en tus preguntas."
-
-    elif topic and topic.strip():
-        cleaned_topic = clean_text(topic)
-        prompt += f"\n\nFUENTE DE TEMA (PRIORIDAD 2):\nGenera preguntas EXCLUSIVAMENTE sobre el siguiente tema: '{cleaned_topic}'.\nUsa tu conocimiento general para crear preguntas relevantes sobre este tema."
-    else:
-        prompt += "\n\nFUENTE POR DEFECTO (PRIORIDAD 3):\nNO HAY CONTEXTO NI TEMA ESPECÍFICO. Genera preguntas variadas del temario oficial de Técnicos Auxiliares de Informática (TAI)."
-
     max_retries = 5
     base_delay = 5
+    
+    # Adaptive Context Strategy: Start safe (35k) and reduce if needed
+    current_context_limit = 35000
 
     for attempt in range(max_retries):
+        # Re-build prompt dynamically for each attempt (to allow context reduction)
+        prompt = get_base_prompt(num_questions, difficulty)
+        
+        import re
+        def clean_text(text):
+            if not text: return ""
+            text = re.sub(r'\n+', '\n', text)
+            text = re.sub(r'\s+', ' ', text)
+            return text.strip()
+
+        # PRIORITY LOGIC (inside loop to use current_context_limit)
+        if context_text:
+            cleaned_context = clean_text(context_text[:current_context_limit])
+            prompt += f"\n\nFUENTE DE CONTEXTO (PRIORIDAD 1):\nUsa EXCLUSIVAMENTE el siguiente texto para generar las preguntas. Lee hasta el final:\n{cleaned_context}"
+            
+            if len(cleaned_context) > 5000:
+                 prompt += "\n\nNOTA: Texto extenso detectado. RECUERDA llegar hasta el final del documento en tus preguntas."
+
+        elif topic and topic.strip():
+            cleaned_topic = clean_text(topic)
+            prompt += f"\n\nFUENTE DE TEMA (PRIORIDAD 2):\nGenera preguntas EXCLUSIVAMENTE sobre el siguiente tema: '{cleaned_topic}'.\nUsa tu conocimiento general para crear preguntas relevantes sobre este tema."
+        else:
+            prompt += "\n\nFUENTE POR DEFECTO (PRIORIDAD 3):\nNO HAY CONTEXTO NI TEMA ESPECÍFICO. Genera preguntas variadas del temario oficial de Técnicos Auxiliares de Informática (TAI)."
+
         try:
             # We wrap the sync call in a thread or just use it directly
             response = await model.generate_content_async(prompt)
@@ -129,9 +130,12 @@ async def generate_exam(num_questions: int, context_text: str = None, topic: str
             
             if "429" in error_str:
                 if attempt < max_retries - 1:
-                    # Exponential backoff: 5s, 10s, 20s, 40s
+                    # Adaptive Reduction: Slash context by 25% on each fail
+                    old_limit = current_context_limit
+                    current_context_limit = int(current_context_limit * 0.75)
+                    
                     wait_time = base_delay * (2 ** attempt)
-                    print(f"Rate limit hit (429). Waiting {wait_time}s before retry...")
+                    print(f"Rate limit hit (429). Reducing context ({old_limit} -> {current_context_limit}) and waiting {wait_time}s...")
                     await asyncio.sleep(wait_time)
                     continue
                 else:
@@ -139,7 +143,7 @@ async def generate_exam(num_questions: int, context_text: str = None, topic: str
                         "question": "¡El servidor de IA está saturado (Error 429)!",
                         "options": ["Inténtalo de nuevo en 1 minuto", "Reduce un poco el texto", "Verifica tu API Key", "Contacta soporte"],
                         "correct_index": 0,
-                        "explanation": "Hemos intentado conectar 5 veces, pero la API de Gemini está recibiendo demasiadas peticiones. Por favor, espera unos momentos.",
+                        "explanation": f"Hemos intentado reducir el texto hasta {current_context_limit} caracteres, pero la API sigue saturada. Espera un poco.",
                         "refutations": {}
                     }]
             else:
