@@ -114,14 +114,12 @@ async def generate_exam(num_questions: int, context_text: str = None, topic: str
     else:
         prompt += "\n\nFUENTE POR DEFECTO (PRIORIDAD 3):\nNO HAY CONTEXTO NI TEMA ESPECÍFICO. Genera preguntas variadas del temario oficial de Técnicos Auxiliares de Informática (TAI)."
 
-    max_retries = 3
-    base_delay = 2
+    max_retries = 5
+    base_delay = 5
 
     for attempt in range(max_retries):
         try:
-            # We wrap the sync call in a thread or just use it directly (it's blocking but fast enough usually, 
-            # though proper way is run_in_executor if blocking). 
-            # The library supports async now? generate_content_async check.
+            # We wrap the sync call in a thread or just use it directly
             response = await model.generate_content_async(prompt)
             return json.loads(response.text)
             
@@ -131,23 +129,26 @@ async def generate_exam(num_questions: int, context_text: str = None, topic: str
             
             if "429" in error_str:
                 if attempt < max_retries - 1:
+                    # Exponential backoff: 5s, 10s, 20s, 40s
                     wait_time = base_delay * (2 ** attempt)
-                    print(f"Rate limit hit. Waiting {wait_time}s...")
+                    print(f"Rate limit hit (429). Waiting {wait_time}s before retry...")
                     await asyncio.sleep(wait_time)
                     continue
                 else:
                     return [{
-                        "question": "¡Ups! Demasiadas peticiones a la IA (Error 429).",
-                        "options": ["Espera 1 minuto", "Reduce el texto", "Intenta de nuevo", "Revisa tu API Key"],
+                        "question": "¡El servidor de IA está saturado (Error 429)!",
+                        "options": ["Inténtalo de nuevo en 1 minuto", "Reduce un poco el texto", "Verifica tu API Key", "Contacta soporte"],
                         "correct_index": 0,
-                        "explanation": "La API de Gemini tiene un límite de usos por minuto. Por favor, espera un poco antes de volver a intentar."
+                        "explanation": "Hemos intentado conectar 5 veces, pero la API de Gemini está recibiendo demasiadas peticiones. Por favor, espera unos momentos.",
+                        "refutations": {}
                     }]
             else:
                  return [{
                     "question": f"Error inesperado: {error_str[:100]}...",
-                    "options": ["Reintentar", "Reportar", "Ignorar", "Salir"],
+                    "options": ["Reintentar", "Ignorar", "Salir", "Ayuda"],
                     "correct_index": 0,
-                    "explanation": "Ocurrió un error al procesar la solicitud."
+                    "explanation": "Ocurrió un error técnico al procesar la solicitud.",
+                    "refutations": {}
                 }]
     
     return []
