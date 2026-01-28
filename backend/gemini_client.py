@@ -37,6 +37,12 @@ def get_base_prompt(num_questions, difficulty):
     - Intermedio: Relación de conceptos y casos prácticos estándar.
     - Experto: Detalles técnicos profundos, excepciones y casos complejos.
 
+    ALGORITMO DE DISTRIBUCIÓN (ANTI-SESGO DE PRIMACÍA):
+    1. Independientemente del contenido (PDF, TXT o Prompt), trata el texto como un conjunto uniforme.
+    2. Divide MENTALMENTE el contenido total en {num_questions} bloques proporcionales.
+    3. Genera EXACTAMENTE una pregunta por cada bloque para garantizar cobertura total (inicio, medio y final).
+    4. PROHIBIDO: Generar múltiples preguntas sobre el mismo párrafo o idea clave.
+
     INSTRUCCIONES DE ESTILO:
     - Las preguntas deben ser técnicas, precisas y desafiantes.
     - La EXPLICACIÓN debe ser DIDÁCTICA y DETALLADA. 
@@ -47,7 +53,8 @@ def get_base_prompt(num_questions, difficulty):
     
     ESTRUCTURA DE LA EXPLICACIÓN:
         1. "La respuesta correcta es [Letra] porque... [fundamento técnico]".
-        2. Explica por qué las demás son incorrectas.
+        2. "Referencia: Basado en la sección/artículo X..." (CITA OBLIGATORIA DEL ORIGEN).
+        3. Explica por qué las demás son incorrectas.
     
     Formato JSON requerido (Array de objetos):
     [
@@ -56,7 +63,7 @@ def get_base_prompt(num_questions, difficulty):
             "question": "Enunciado técnico...",
             "options": ["Opción A", "Opción B", "Opción C", "Opción D"],
             "correct_index": 0,
-            "explanation": "Correcta: [Razón técnica]..."
+            "explanation": "La respuesta correcta es A porque... Referencia: Artículo 14..."
         }},
         ...
     ]
