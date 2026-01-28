@@ -82,19 +82,23 @@ export default function StartScreen({ onStart }) {
                         </h3>
 
                         <div className="grid grid-cols-2 gap-4">
-                            {/* Num Questions */}
+                            {/* Num Questions Slider */}
                             <div className="relative">
-                                <select
-                                    value={numQuestions}
-                                    onChange={(e) => setNumQuestions(Number(e.target.value))}
-                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-xl px-4 py-3 appearance-none focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium text-sm"
-                                >
-                                    <option value="5">5 preguntas</option>
-                                    <option value="10">10 preguntas</option>
-                                    <option value="20">20 preguntas</option>
-                                </select>
-                                <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
-                                    <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
+                                    Preguntas: <span className="text-blue-600 dark:text-blue-400 text-sm ml-1">{numQuestions}</span>
+                                </label>
+                                <div className="flex items-center gap-3">
+                                    <span className="text-xs text-slate-400 font-bold">5</span>
+                                    <input
+                                        type="range"
+                                        min="5"
+                                        max="10"
+                                        step="1"
+                                        value={numQuestions}
+                                        onChange={(e) => setNumQuestions(Number(e.target.value))}
+                                        className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-600 dark:accent-blue-500"
+                                    />
+                                    <span className="text-xs text-slate-400 font-bold">10</span>
                                 </div>
                             </div>
 
