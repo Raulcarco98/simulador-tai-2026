@@ -37,12 +37,16 @@ def get_base_prompt(num_questions, difficulty):
     - Intermedio: Relación de conceptos y casos prácticos estándar.
     - Experto: Detalles técnicos profundos, excepciones y casos complejos.
 
-    ALGORITMO DE DISTRIBUCIÓN (ANTI-SESGO DE PRIMACÍA):
-    1. Independientemente del contenido (PDF, TXT o Prompt), trata el texto como un conjunto uniforme.
-    2. Divide MENTALMENTE el contenido total en {num_questions} bloques proporcionales.
-    3. Genera EXACTAMENTE una pregunta por cada bloque para garantizar cobertura total (inicio, medio y final).
-    4. PROHIBIDO: Generar múltiples preguntas sobre el mismo párrafo o idea clave.
-
+    ESTRATEGIA DE COBERTURA PROFUNDA (OBLIGATORIO):
+    El usuario necesita evaluar TODO el documento. Tienes prohibido quedarte solo en el inicio.
+    
+    1. ESCANEO INICIAL: Lee el texto completo hasta la última línea antes de generar nada. Identifica el rango total (ej: Artículos 1 al 100).
+    2. DISTRIBUCIÓN FORZADA (Ejemplo para 10 preguntas):
+       - Preguntas 1-3: Primer tercio del documento.
+       - Preguntas 4-7: Parte central del documento.
+       - Preguntas 8-10: ÚLTIMO TERCIO del documento (Es vital llegar al final).
+    3. Si el texto tiene Artículos, asegúrate de citar Artículos del final.
+    
     INSTRUCCIONES DE ESTILO:
     - Las preguntas deben ser técnicas, precisas y desafiantes.
     - La EXPLICACIÓN debe ser DIDÁCTICA y DETALLADA. 
@@ -63,7 +67,7 @@ def get_base_prompt(num_questions, difficulty):
             "question": "Enunciado técnico...",
             "options": ["Opción A", "Opción B", "Opción C", "Opción D"],
             "correct_index": 0,
-            "explanation": "La respuesta correcta es A porque... Referencia: Artículo 14..."
+            "explanation": "La respuesta correcta es A porque... Referencia: Artículo 56..."
         }},
         ...
     ]
@@ -75,8 +79,8 @@ async def generate_exam(num_questions: int, context_text: str = None, topic: str
 
     prompt = get_base_prompt(num_questions, difficulty)
     
-    # Reduced context limit to avoid hitting TPM limits quickly on free tier
-    MAX_CONTEXT_CHARS = 30000 
+    # Increased context limit to ensure end of document is available
+    MAX_CONTEXT_CHARS = 45000 
     
     import re
     def clean_text(text):
@@ -90,10 +94,10 @@ async def generate_exam(num_questions: int, context_text: str = None, topic: str
     # PRIORITY LOGIC
     if context_text:
         cleaned_context = clean_text(context_text[:MAX_CONTEXT_CHARS])
-        prompt += f"\n\nFUENTE DE CONTEXTO (PRIORIDAD 1):\nUsa EXCLUSIVAMENTE el siguiente texto para generar las preguntas:\n{cleaned_context}"
+        prompt += f"\n\nFUENTE DE CONTEXTO (PRIORIDAD 1):\nUsa EXCLUSIVAMENTE el siguiente texto para generar las preguntas. Lee hasta el final:\n{cleaned_context}"
         
         if len(cleaned_context) > 5000:
-             prompt += "\n\nNOTA: El texto es extenso. Céntrate en los PUNTOS CLAVE y conceptos más importantes. Evita detalles triviales para maximizar la calidad de las preguntas."
+             prompt += "\n\nNOTA: Texto extenso detectado. RECUERDA llegar hasta el final del documento en tus preguntas."
 
     elif topic and topic.strip():
         cleaned_topic = clean_text(topic)
