@@ -55,10 +55,12 @@ def get_base_prompt(num_questions, difficulty):
     - "correct_index" DEBE corresponder EXACTAMENTE a la posición en el array "options" (0 para A, 1 para B, etc.).
     - La "explanation" debe decir explícitamente "La respuesta correcta es [Letra]..." y coincidir con "correct_index".
     
-    ESTRUCTURA DE LA EXPLICACIÓN:
-        1. "La respuesta correcta es [Letra] porque... [fundamento técnico]".
-        2. "Referencia: Basado en la sección/artículo X..." (CITA OBLIGATORIA DEL ORIGEN).
-        3. Explica por qué las demás son incorrectas.
+    ESTRUCTURA DE LA EXPLICACIÓN (IMPORTANTE):
+        1. "La respuesta correcta es [Letra] porque... [razón fundamental]".
+        2. "Referencia: Basado en la sección/artículo X..." (CITA).
+        3. ANÁLISIS DE FALLOS: Debes explicar POR QUÉ cada opción incorrecta no es válida.
+           - Ejemplo: "La opción B es incorrecta porque la Fresa es una fruta, no una verdura."
+           - NO digas solo "B es falsa". Di QUÉ ES B realmente o en qué contexto se usaría.
     
     Formato JSON requerido (Array de objetos):
     [
@@ -67,7 +69,7 @@ def get_base_prompt(num_questions, difficulty):
             "question": "Enunciado técnico...",
             "options": ["Opción A", "Opción B", "Opción C", "Opción D"],
             "correct_index": 0,
-            "explanation": "La respuesta correcta es A porque... Referencia: Artículo 56..."
+            "explanation": "La respuesta correcta es A porque... Referencia: Art. 14. La opción B es incorrecta ya que se refiere a..."
         }},
         ...
     ]
