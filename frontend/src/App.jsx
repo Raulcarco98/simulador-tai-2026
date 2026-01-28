@@ -107,6 +107,14 @@ function App() {
     setCurrentQuestionIndex(0);
   };
 
+  const handleRetry = () => {
+    if (config) {
+      handleStartExam(config);
+    } else {
+      setGameState("start");
+    }
+  };
+
   const currentQuestion = questions[currentQuestionIndex];
   const currentAnswer = answers[currentQuestionIndex];
 
@@ -184,6 +192,7 @@ function App() {
               answers={answers}
               questions={questions}
               onRestart={handleRestart}
+              onRetry={handleRetry}
             />
           )}
         </main>

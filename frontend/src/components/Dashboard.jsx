@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { RefreshCcw, Home } from "lucide-react";
 
-export default function Dashboard({ answers, questions, onRestart }) {
+export default function Dashboard({ answers, questions, onRestart, onRetry }) {
     // Logic: Correct - (Errors / 3)
     const correctCount = answers.filter(a => a.isCorrect).length;
     const incorrectCount = answers.filter(a => a.answered && !a.isCorrect).length;
@@ -53,11 +53,18 @@ export default function Dashboard({ answers, questions, onRestart }) {
 
             <div className="flex gap-4">
                 <button
+                    onClick={onRetry}
+                    className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-full font-bold shadow-lg shadow-blue-500/25 transition-all transform hover:-translate-y-0.5 active:translate-y-0"
+                >
+                    <RefreshCcw className="w-4 h-4" />
+                    Generar otro igual
+                </button>
+                <button
                     onClick={onRestart}
                     className="flex items-center gap-2 px-8 py-3 bg-slate-200 dark:bg-white/10 hover:bg-slate-300 dark:hover:bg-white/20 border border-slate-300 dark:border-white/10 rounded-full text-slate-900 dark:text-white transition-all font-semibold"
                 >
                     <Home className="w-4 h-4" />
-                    Volver al Inicio
+                    Volver al menú
                 </button>
             </div>
         </div>
