@@ -35,12 +35,12 @@ def get_base_prompt(num_questions, difficulty):
     NIVEL DE DIFICULTAD: {difficulty.upper()}
     - Básico: Conceptos fundamentales y definiciones.
     - Intermedio: Relación de conceptos y casos prácticos estándar.
-    - Experto: Detalles técnicos profundos, excepciones y casos complejos.
+    - Experto: DIFICULTAD MÁXIMA EN LAS OPCIONES. Las respuestas incorrectas deben ser MUY SIMILARES a la correcta (cambiar una palabra clave, plazos muy cercanos, excepciones sutiles). Obliga al usuario a tener conocimiento preciso. EVITA distractores obvios o ridículos.
 
     ESTRATEGIA DE COBERTURA PROFUNDA (OBLIGATORIO):
     El usuario necesita evaluar TODO el documento. Tienes prohibido quedarte solo en el inicio.
     
-    1. ESCANEO INICIAL: Lee el texto completo hasta la última línea antes de generar nada. Identifica el rango total (ej: Artículos 1 al 100).
+    1. ESCANEO INICIAL: Lee el texto completo hasta la última línea antes de generar nada. Identifica el rango total.
     2. DISTRIBUCIÓN FORZADA (Ejemplo para 10 preguntas):
        - Preguntas 1-3: Primer tercio del documento.
        - Preguntas 4-7: Parte central del documento.
@@ -88,8 +88,8 @@ async def generate_exam(num_questions: int, context_text: str = None, topic: str
 
     prompt = get_base_prompt(num_questions, difficulty)
     
-    # Increased context limit to ensure end of document is available
-    MAX_CONTEXT_CHARS = 45000 
+    # Adjusted context limit to balance Coverage vs Rate Limits (429)
+    MAX_CONTEXT_CHARS = 40000 
     
     import re
     def clean_text(text):
