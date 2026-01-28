@@ -91,11 +91,92 @@ async def generate_exam(num_questions: int, context_text: str = None, topic: str
     max_retries = 5
     base_delay = 5
     
-    # Adaptive Context Strategy: Start safe (35k) and reduce if needed
-    current_context_limit = 35000
+    # Internal function for individual chunks (contains the retry/adaptive logic)
+    async def _generate_chunk(chunk_prompt, current_context_text, current_context_limit):
+         for attempt in range(max_retries):
+            # Re-build prompt logic locally if needed, but here we just append context
+            # We assume chunk_prompt is the base instructions.
+            
+            final_prompt = chunk_prompt
+            
+            # Apply context limit
+            import re
+            def clean_text(text):
+                if not text: return ""
+                text = re.sub(r'\n+', '\n', text)
+                text = re.sub(r'\s+', ' ', text)
+                return text.strip()
 
+            if current_context_text:
+                cleaned = clean_text(current_context_text[:current_context_limit])
+                final_prompt += f"\n\nCONTEXTO (FRAGMENTO):\n{cleaned}"
+            
+            try:
+                response = await model.generate_content_async(final_prompt)
+                return json.loads(response.text)
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str:
+                    if attempt < max_retries - 1:
+                        current_context_limit = int(current_context_limit * 0.75)
+                        wait_time = base_delay * (2 ** attempt)
+                        print(f"Batch Retry: Rate limit hit. Reducing context to {current_context_limit} chars. Waiting {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                print(f"Chunk generation failed: {error_str}")
+                return [] # Return empty on final failure to allow other chunks to succeed
+         return []
+
+    # === SMART BATCHING LOGIC ===
+    
+    # Determine if we need batching (More than 5 questions AND we have context)
+    if num_questions > 5 and context_text:
+        print("Smart Batching Triggered: Splitting request...")
+        
+        # Split Context
+        mid_point = len(context_text) // 2
+        chunk1_text = context_text[:mid_point]
+        chunk2_text = context_text[mid_point:]
+        
+        # Split Questions (e.g. 10 -> 5 + 5, 9 -> 5 + 4)
+        q1_count = text_questions = int(num_questions / 2 + 0.5) # Ceil
+        q2_count = num_questions - q1_count
+        
+        prompt1 = get_base_prompt(q1_count, difficulty) + "\n\nNOTA: Este es el FRAGMENTO 1 (INICIO) del documento."
+        prompt2 = get_base_prompt(q2_count, difficulty) + "\n\nNOTA: Este es el FRAGMENTO 2 (FINAL) del documento. Céntrate en el final."
+        
+        # Execute Parallel
+        task1 = _generate_chunk(prompt1, chunk1_text, 30000) # Lower initial limit for safety
+        task2 = _generate_chunk(prompt2, chunk2_text, 30000)
+        
+        results = await asyncio.gather(task1, task2)
+        
+        # Merge & Re-ID
+        merged_questions = []
+        current_id = 1
+        
+        for batch in results:
+            if isinstance(batch, list):
+                for q in batch:
+                    q['id'] = current_id
+                    merged_questions.append(q)
+                    current_id += 1
+        
+        if not merged_questions:
+             return [{
+                "question": "Error en Batching: La IA no pudo generar preguntas.",
+                "options": ["Reintentar", "Reducir preguntas", "Verificar API", "Soporte"],
+                "correct_index": 0,
+                "explanation": "Ambos intentos paralelos fallaron por saturación.",
+                "refutations": {}
+            }]
+            
+        return merged_questions
+
+    # === STANDARD SINGLE EXECUTION (<= 5 questions OR No Context) ===
+    
+    current_context_limit = 35000
     for attempt in range(max_retries):
-        # Re-build prompt dynamically for each attempt (to allow context reduction)
         prompt = get_base_prompt(num_questions, difficulty)
         
         import re
@@ -105,54 +186,35 @@ async def generate_exam(num_questions: int, context_text: str = None, topic: str
             text = re.sub(r'\s+', ' ', text)
             return text.strip()
 
-        # PRIORITY LOGIC (inside loop to use current_context_limit)
         if context_text:
             cleaned_context = clean_text(context_text[:current_context_limit])
-            prompt += f"\n\nFUENTE DE CONTEXTO (PRIORIDAD 1):\nUsa EXCLUSIVAMENTE el siguiente texto para generar las preguntas. Lee hasta el final:\n{cleaned_context}"
-            
-            if len(cleaned_context) > 5000:
-                 prompt += "\n\nNOTA: Texto extenso detectado. RECUERDA llegar hasta el final del documento en tus preguntas."
-
+            prompt += f"\n\nFUENTE DE CONTEXTO (PRIORIDAD 1):\nUsa EXCLUSIVAMENTE el siguiente texto:\n{cleaned_context}"
         elif topic and topic.strip():
             cleaned_topic = clean_text(topic)
-            prompt += f"\n\nFUENTE DE TEMA (PRIORIDAD 2):\nGenera preguntas EXCLUSIVAMENTE sobre el siguiente tema: '{cleaned_topic}'.\nUsa tu conocimiento general para crear preguntas relevantes sobre este tema."
+            prompt += f"\n\nFUENTE DE TEMA (PRIORIDAD 2):\nGenera preguntas EXCLUSIVAMENTE sobre: '{cleaned_topic}'."
         else:
-            prompt += "\n\nFUENTE POR DEFECTO (PRIORIDAD 3):\nNO HAY CONTEXTO NI TEMA ESPECÍFICO. Genera preguntas variadas del temario oficial de Técnicos Auxiliares de Informática (TAI)."
+            prompt += "\n\nFUENTE POR DEFECTO (PRIORIDAD 3):\nTemario TAI oficial."
 
         try:
-            # We wrap the sync call in a thread or just use it directly
             response = await model.generate_content_async(prompt)
             return json.loads(response.text)
-            
         except Exception as e:
             error_str = str(e)
-            print(f"Attempt {attempt + 1} failed: {error_str}")
-            
             if "429" in error_str:
                 if attempt < max_retries - 1:
-                    # Adaptive Reduction: Slash context by 25% on each fail
-                    old_limit = current_context_limit
                     current_context_limit = int(current_context_limit * 0.75)
-                    
                     wait_time = base_delay * (2 ** attempt)
-                    print(f"Rate limit hit (429). Reducing context ({old_limit} -> {current_context_limit}) and waiting {wait_time}s...")
                     await asyncio.sleep(wait_time)
                     continue
                 else:
                     return [{
-                        "question": "¡El servidor de IA está saturado (Error 429)!",
-                        "options": ["Inténtalo de nuevo en 1 minuto", "Reduce un poco el texto", "Verifica tu API Key", "Contacta soporte"],
+                        "question": "¡Error 429 Persistente!",
+                        "options": ["Intenta con 5 preguntas", "Espera un momento", "Revisa API", "Soporte"],
                         "correct_index": 0,
-                        "explanation": f"Hemos intentado reducir el texto hasta {current_context_limit} caracteres, pero la API sigue saturada. Espera un poco.",
+                        "explanation": f"Incluso reduciendo a {current_context_limit} chars, la API está saturada.",
                         "refutations": {}
                     }]
             else:
-                 return [{
-                    "question": f"Error inesperado: {error_str[:100]}...",
-                    "options": ["Reintentar", "Ignorar", "Salir", "Ayuda"],
-                    "correct_index": 0,
-                    "explanation": "Ocurrió un error técnico al procesar la solicitud.",
-                    "refutations": {}
-                }]
+                 return [{"question": f"Error: {error_str[:50]}", "options": ["A"], "correct_index": 0, "explanation": "Error técnico.", "refutations": {}}]
     
     return []
