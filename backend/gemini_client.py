@@ -49,7 +49,11 @@ def get_base_prompt(num_questions, difficulty):
     
     INSTRUCCIONES DE ESTILO:
     - Las preguntas deben ser técnicas, precisas y desafiantes.
-    - La EXPLICACIÓN debe ser DIDÁCTICA y DETALLADA. 
+    - La EXPLICACIÓN debe ser DIDÁCTICA y DETALLADA.
+    
+    INSTRUCCIONES DE REALISMO (META-RESPUESTAS):
+    - En aproximadamente el 20% de las preguntas, incluye opciones tipo "Todas las anteriores son correctas" o "Ninguna es correcta".
+    - Esto añade realismo y dificultad. Asegúrate de que la lógica se sostenga (ej: si "Todas" es correcta, A, B y C deben ser verdaderas). 
     
     CRITÉRIO DE INTEGRIDAD JSON (CRÍTICO):
     - "correct_index" DEBE corresponder EXACTAMENTE a la posición en el array "options" (0 para A, 1 para B, etc.).
