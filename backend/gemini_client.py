@@ -58,9 +58,11 @@ def get_base_prompt(num_questions, difficulty):
     ESTRUCTURA DE LA EXPLICACIÓN (IMPORTANTE):
         1. "La respuesta correcta es [Letra] porque... [razón fundamental]".
         2. "Referencia: Basado en la sección/artículo X..." (CITA).
-        3. ANÁLISIS DE FALLOS: Debes explicar POR QUÉ cada opción incorrecta no es válida.
-           - Ejemplo: "La opción B es incorrecta porque la Fresa es una fruta, no una verdura."
-           - NO digas solo "B es falsa". Di QUÉ ES B realmente o en qué contexto se usaría.
+    
+    ESTRUCTURA DE REFUTACIONES (NUEVO):
+    - Debes generar un objeto "refutations" donde expliques por qué CADA opción incorrecta falla.
+    - Clave: El índice de la opción (0, 1, 2, 3).
+    - Valor: "Esta opción es incorrecta porque..." (Análisis específico).
     
     Formato JSON requerido (Array de objetos):
     [
@@ -69,7 +71,12 @@ def get_base_prompt(num_questions, difficulty):
             "question": "Enunciado técnico...",
             "options": ["Opción A", "Opción B", "Opción C", "Opción D"],
             "correct_index": 0,
-            "explanation": "La respuesta correcta es A porque... Referencia: Art. 14. La opción B es incorrecta ya que se refiere a..."
+            "explanation": "La respuesta correcta es A porque... Referencia: Art. 14.",
+            "refutations": {{
+                "1": "B es incorrecta porque...",
+                "2": "C es incorrecta porque...",
+                "3": "D es incorrecta porque..."
+            }}
         }},
         ...
     ]
