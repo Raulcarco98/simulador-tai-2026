@@ -19,11 +19,11 @@ export default function QuestionCard({
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
             key={question.id}
-            className="w-full max-w-3xl mx-auto p-6 md:p-8 rounded-2xl bg-white/70 dark:bg-[#0f172a]/60 backdrop-blur-xl border border-slate-200 dark:border-white/10 shadow-xl dark:shadow-2xl relative overflow-hidden transition-colors duration-300"
+            className="w-full max-w-3xl mx-auto p-5 md:p-8 rounded-2xl bg-white/70 dark:bg-[#0f172a]/60 backdrop-blur-xl border border-slate-200 dark:border-white/10 shadow-xl dark:shadow-2xl relative overflow-hidden transition-colors duration-300"
         >
             <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl -z-10 transform translate-x-1/2 -translate-y-1/2" />
 
-            <h2 className="text-xl md:text-2xl font-semibold text-slate-800 dark:text-slate-100 mb-6 leading-relaxed">
+            <h2 className="text-lg md:text-2xl font-semibold text-slate-800 dark:text-slate-100 mb-6 leading-relaxed">
                 {question.question}
             </h2>
 

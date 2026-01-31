@@ -1,0 +1,16 @@
+{
+    "name": "Simulador TAI 2026",
+    "short_name": "Simulador TAI",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#ffffff",
+    "description": "Simulador de Exámenes para Oposiciones TAI.",
+    "icons": [
+        {
+            "src": "icon.png",
+            "sizes": "192x192 512x512",
+            "type": "image/png"
+        }
+    ]
+}

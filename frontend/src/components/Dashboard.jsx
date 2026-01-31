@@ -56,17 +56,17 @@ export default function Dashboard({ answers, questions, onRestart, onRetry }) {
                 </div>
             </div>
 
-            <div className="flex gap-4">
+            <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
                 <button
                     onClick={onRetry}
-                    className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-full font-bold shadow-lg shadow-blue-500/25 transition-all transform hover:-translate-y-0.5 active:translate-y-0"
+                    className="flex justify-center items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-full font-bold shadow-lg shadow-blue-500/25 transition-all transform hover:-translate-y-0.5 active:translate-y-0 w-full md:w-auto"
                 >
                     <RefreshCcw className="w-4 h-4" />
                     Generar otro igual
                 </button>
                 <button
                     onClick={onRestart}
-                    className="flex items-center gap-2 px-8 py-3 bg-slate-200 dark:bg-white/10 hover:bg-slate-300 dark:hover:bg-white/20 border border-slate-300 dark:border-white/10 rounded-full text-slate-900 dark:text-white transition-all font-semibold"
+                    className="flex justify-center items-center gap-2 px-8 py-3 bg-slate-200 dark:bg-white/10 hover:bg-slate-300 dark:hover:bg-white/20 border border-slate-300 dark:border-white/10 rounded-full text-slate-900 dark:text-white transition-all font-semibold w-full md:w-auto"
                 >
                     <Home className="w-4 h-4" />
                     Volver al menú
