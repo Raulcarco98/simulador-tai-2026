@@ -2,6 +2,7 @@ import os
 import google.generativeai as genai
 import json
 import asyncio
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,6 +27,31 @@ if API_KEY:
         model_name="gemini-2.0-flash",
         generation_config=generation_config,
     )
+
+def validate_and_fix_question(question):
+    """
+    Checks if the explanation explicitly states the correct answer (e.g., "La respuesta correcta es C")
+    and safeguards that 'correct_index' matches it.
+    """
+    try:
+        explanation = question.get("explanation", "")
+        # Regex to capture "respuesta correcta es [la] X" or similar patterns
+        # We look for A, B, C, or D in a specific context to avoid false positives.
+        match = re.search(r"respuesta\s+correcta\s+(?:es|sea)\s+(?:la\s+)?([A-D])\b", explanation, re.IGNORECASE)
+        
+        if match:
+            correct_letter = match.group(1).upper()
+            expected_index = ord(correct_letter) - ord('A')
+            
+            if 0 <= expected_index <= 3:
+                current_index = question.get("correct_index")
+                if current_index != expected_index:
+                    print(f"FIX APPLIED for Q{question.get('id')}: Index {current_index} mismatch with explanation '{correct_letter}'. Updating to {expected_index}.")
+                    question["correct_index"] = expected_index
+    except Exception as e:
+        print(f"Validation Error: {e}")
+    
+    return question
 
 def get_base_prompt(num_questions, difficulty):
     return f"""
@@ -166,6 +192,9 @@ async def generate_exam(num_questions: int, context_text: str = None, topic: str
                     merged_questions.append(q)
                     current_id += 1
         
+        # Apply Validation to ALL merged questions
+        merged_questions = [validate_and_fix_question(q) for q in merged_questions]
+        
         if not merged_questions:
              return [{
                 "question": "Error en Batching: La IA no pudo generar preguntas.",
@@ -201,7 +230,13 @@ async def generate_exam(num_questions: int, context_text: str = None, topic: str
 
         try:
             response = await model.generate_content_async(prompt)
-            return json.loads(response.text)
+            questions = json.loads(response.text)
+            
+            # Apply Validation
+            if isinstance(questions, list):
+                questions = [validate_and_fix_question(q) for q in questions]
+                
+            return questions
         except Exception as e:
             error_str = str(e)
             if "429" in error_str:

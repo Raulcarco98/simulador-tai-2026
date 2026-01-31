@@ -9,12 +9,18 @@ export default function Dashboard({ answers, questions, onRestart, onRetry }) {
 
     const rawScore = correctCount - (incorrectCount / 3);
     const maxScore = questions.length;
-    const percentage = Math.max(0, (rawScore / maxScore) * 100).toFixed(1);
+    const percentageValue = Math.max(0, (rawScore / maxScore) * 100);
+    const percentage = percentageValue.toFixed(1);
 
-    // Chart calculation (CSS Conic Gradient)
-    const correctDeg = (correctCount / maxScore) * 360;
-    const errorDeg = (incorrectCount / maxScore) * 360;
-    const unansweredDeg = 360 - correctDeg - errorDeg;
+    // Chart calculation (Single Grade Progress)
+    const scoreDeg = (percentageValue / 100) * 360;
+
+    // Dynamic Color
+    let progressColor = "#ef4444"; // Red (Fail)
+    if (percentageValue >= 50) progressColor = "#fbbf24"; // Yellow (Pass)
+    if (percentageValue >= 80) progressColor = "#10b981"; // Green (Good)
+
+    const remainingColor = "#cbd5e1"; // Slate-300 for empty background
 
     return (
         <div className="flex flex-col items-center justify-center min-h-[60vh] text-center w-full max-w-4xl mx-auto">
@@ -26,9 +32,8 @@ export default function Dashboard({ answers, questions, onRestart, onRetry }) {
                     <div className="relative w-48 h-48 rounded-full flex items-center justify-center shadow-2xl mb-6"
                         style={{
                             background: `conic-gradient(
-                        #10b981 0deg ${correctDeg}deg,
-                        #ef4444 ${correctDeg}deg ${correctDeg + errorDeg}deg,
-                        #94a3b8 ${correctDeg + errorDeg}deg 360deg
+                        ${progressColor} 0deg ${scoreDeg}deg,
+                        ${remainingColor} ${scoreDeg}deg 360deg
                     )`
                         }}
                     >
