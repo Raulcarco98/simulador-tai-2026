@@ -10,7 +10,8 @@ export default function QuestionCard({
     onPrev,
     isFirst,
     isLast,
-    onFinish
+    onFinish,
+    isReview = false
 }) {
 
     return (
@@ -97,34 +98,36 @@ export default function QuestionCard({
                 )}
             </AnimatePresence>
 
-            {/* Navigation Controls */}
-            <div className="flex justify-between items-center mt-6 pt-6 border-t border-slate-200 dark:border-white/10">
-                <button
-                    onClick={onPrev}
-                    disabled={isFirst}
-                    className="flex items-center text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white disabled:opacity-30 disabled:hover:text-slate-500 transition-colors"
-                >
-                    <ChevronLeft className="w-5 h-5 mr-1" />
-                    Anterior
-                </button>
+            {/* Navigation Controls - Hidden in Review Mode */}
+            {!isReview && (
+                <div className="flex justify-between items-center mt-6 pt-6 border-t border-slate-200 dark:border-white/10">
+                    <button
+                        onClick={onPrev}
+                        disabled={isFirst}
+                        className="flex items-center text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white disabled:opacity-30 disabled:hover:text-slate-500 transition-colors"
+                    >
+                        <ChevronLeft className="w-5 h-5 mr-1" />
+                        Anterior
+                    </button>
 
-                {isLast ? (
-                    <button
-                        onClick={onFinish}
-                        className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold shadow-lg shadow-emerald-500/20 transition-all"
-                    >
-                        Finalizar Examen
-                    </button>
-                ) : (
-                    <button
-                        onClick={onNext}
-                        className="flex items-center text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300 transition-colors font-medium"
-                    >
-                        Siguiente
-                        <ChevronRight className="w-5 h-5 ml-1" />
-                    </button>
-                )}
-            </div>
+                    {isLast ? (
+                        <button
+                            onClick={onFinish}
+                            className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold shadow-lg shadow-emerald-500/20 transition-all"
+                        >
+                            Finalizar Examen
+                        </button>
+                    ) : (
+                        <button
+                            onClick={onNext}
+                            className="flex items-center text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300 transition-colors font-medium"
+                        >
+                            Siguiente
+                            <ChevronRight className="w-5 h-5 ml-1" />
+                        </button>
+                    )}
+                </div>
+            )}
         </motion.div>
     );
 }
