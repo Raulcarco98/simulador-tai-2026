@@ -105,57 +105,53 @@ def _clean_json_response(raw_text):
 
 def validate_and_fix_question(question):
     """
-    BLINDAJE FINAL: Verifica que correct_index sea coherente con explanation.
-    Aplica fix automatico si detecta discrepancia.
+    BLINDAJE STRICTO: La explicacion es la fuente de la verdad.
+    Si la explicacion dice 'La respuesta correcta es B', el indice DEBE ser 1.
     """
     try:
-        explanation = question.get("explanation", "")
+        explanation = question.get("explanation", "").strip()
         options = question.get("options", [])
         correct_idx = question.get("correct_index", 0)
+        
+        # 1. Extraer la letra que la explicacion AFIRMA ser correcta
         detected_letter = None
         
-        # Pattern 1: "respuesta correcta es [la] X"
+        # Pattern Prioritario: "La respuesta correcta es [la] X" (Formato forzado en prompt)
         m = re.search(r"respuesta\s+correcta\s+(?:es|sea)\s+(?:la\s+)?([A-D])\b", explanation, re.IGNORECASE)
         if m:
             detected_letter = m.group(1).upper()
         
-        # Pattern 2: "Correcta: X" or "Correcta: [X]"
+        # Fallbacks (por si el modelo alucina el formato)
         if not detected_letter:
-            m2 = re.search(r"[Cc]orrecta:\s*\[?([A-D])\]?", explanation)
-            if m2:
-                detected_letter = m2.group(1).upper()
-        
-        # Pattern 3: "Es la X" at start
+            # "Correcta: X"
+            m2 = re.search(r"correcta:\s*\[?([A-D])\]?", explanation, re.IGNORECASE)
+            if m2: detected_letter = m2.group(1).upper()
+            
         if not detected_letter:
-            m3 = re.search(r"^\s*[Ee]s\s+la\s+([A-D])\b", explanation)
-            if m3:
-                detected_letter = m3.group(1).upper()
-        
-        # Pattern 4: Starts with a letter reference "A)" or "A."
-        if not detected_letter:
-            m4 = re.search(r"^([A-D])[).\s]", explanation.strip())
-            if m4:
-                detected_letter = m4.group(1).upper()
-        
-        # Pattern 5: "opcion X es correcta"
-        if not detected_letter:
-            m5 = re.search(r"opci[oó]n\s+([A-D])\s+(?:es|sea)\s+(?:la\s+)?correcta", explanation, re.IGNORECASE)
-            if m5:
-                detected_letter = m5.group(1).upper()
-        
+            # Empieza por "X)" o "X."
+            m3 = re.search(r"^([A-D])[).\s]", explanation)
+            if m3: detected_letter = m3.group(1).upper()
+
+        # 2. Aplicar correccion si hay discrepancia
         if detected_letter:
             expected_index = ord(detected_letter) - ord('A')
-            if 0 <= expected_index <= 3 and correct_idx != expected_index:
-                _safe_print(f"[BLINDAJE] Q{question.get('id')}: correct_index {correct_idx} -> {expected_index} (explanation dice '{detected_letter}')")
-                question["correct_index"] = expected_index
-        
-        # Validate correct_index is in range
-        if not isinstance(correct_idx, int) or correct_idx < 0 or correct_idx >= len(options):
-            _safe_print(f"[BLINDAJE] Q{question.get('id')}: correct_index {correct_idx} fuera de rango. Reseteando a 0.")
-            question["correct_index"] = 0
             
+            # Verificar rango valido
+            if 0 <= expected_index < len(options):
+                if correct_idx != expected_index:
+                    _safe_print(f"[BLINDAJE] Q{question.get('id')}: CORRECCION APLICADA. Indice {correct_idx} ({chr(65+correct_idx)}) -> {expected_index} ({detected_letter}) basado en explicacion.")
+                    question["correct_index"] = expected_index
+            else:
+                 _safe_print(f"[BLINDAJE] Q{question.get('id')}: Letra detectada '{detected_letter}' fuera de rango de opciones. No se puede corregir.")
+        
+        # 3. Validacion final de rango
+        current_idx = question.get("correct_index")
+        if not isinstance(current_idx, int) or current_idx < 0 or current_idx >= len(options):
+             _safe_print(f"[BLINDAJE] Q{question.get('id')}: Indice {current_idx} invalido. Reseteando a 0 (Safeguard).")
+             question["correct_index"] = 0
+
     except Exception as e:
-        _safe_print(f"[BLINDAJE] Error validando pregunta: {e}")
+        _safe_print(f"[BLINDAJE] Error critico en validacion: {e}")
     
     return question
 
@@ -168,18 +164,14 @@ def get_base_prompt(num_questions, difficulty):
     - Temas: Casos practicos, sintaxis y excepciones.
     - Estructura: 25% preguntas negativas (Cual es FALSA?).
     - Distractores: Cambia cifras (10->15 dias), confunde leyes (39<->40), usa siglas parecidas (ENS<->ENI).
-    - Cobertura: Evalua TODO el contenido proporcionado. Distribuye las preguntas uniformemente por todo el texto.
-    - Concision: Explicacion de 1 linea (max 15 palabras).
-    - Formato: Responde UNICAMENTE el array JSON, sin texto previo ni posterior.
+    - Leyes 39/40: Si preguntas por plazos, busca el dato EXACTO en el texto. No inventes.
+    - Formato: JSON Array estricto.
 
-    PROCESO INTERNO (para cada pregunta):
-    PASO 1: Determina la respuesta correcta y redacta la explicacion breve.
-    PASO 2: Basandote UNICAMENTE en el Paso 1, asigna correct_index (0=A, 1=B, 2=C, 3=D).
-
-    REGLA DE ORO: Si en la explicacion mencionas una letra (ej: "Es la B"), correct_index DEBE ser obligatoriamente el indice de esa letra.
-    En preguntas negativas, correct_index = indice de la opcion FALSA.
-
-    BLINDAJE: Para cada pregunta, verifica internamente: La explanation confirma que la opcion [X] es la correcta? Entonces correct_index debe ser imperativamente el valor numerico de [X].
+    PROCESO DE GENERACION (SELF-CORRECTION):
+    1. Piensa la pregunta y las 4 opciones.
+    2. REDACTA la explicacion comenzando OBLIGATORIAMENTE asi: "La respuesta correcta es [Letra] porque...".
+    3. Verifica: Si has escrito "La respuesta correcta es B", el campo "correct_index" DEBE ser 1.
+    4. Si es pregunta negativa ("Cual es falsa"), la "respuesta correcta" es la opcion Falsa.
 
     JSON SCHEMA:
     [
@@ -187,8 +179,8 @@ def get_base_prompt(num_questions, difficulty):
             "id": 1,
             "question": "Texto",
             "options": ["A", "B", "C", "D"],
-            "correct_index": 0,
-            "explanation": "Ref: [Concepto/Art]. Motivo: [Breve]"
+            "correct_index": 0, <--- DEBE COINCIDIR CON LA LETRA DE LA EXPLICACION
+            "explanation": "La respuesta correcta es A porque [Explicacion breve]..."
         }}
     ]
     """
@@ -198,18 +190,16 @@ def get_base_prompt(num_questions, difficulty):
     
     NIVEL: {difficulty.upper()} (Basico/Intermedio)
     ESTILO: Preguntas claras. Explicacion didactica.
-    REALISMO: Usa "Todas/Ninguna es correcta" en 20% de preguntas.
-    COBERTURA: Evalua TODO el contenido proporcionado. Distribuye las preguntas uniformemente.
+    COBERTURA: Distribuye las preguntas uniformemente por todo el texto proporcionado.
+    PLAZOS Y LEYES: Se preciso con los dias y los silencios administrativos.
     
-    CRITERIO JSON:
-    - "explanation" empieza con "La respuesta correcta es [Letra]...".
+    CRITERIO OBLIGATORIO:
+    - "explanation" DEBE empezar con la frase exacta: "La respuesta correcta es [Letra]...".
     
-    PROCESO INTERNO (para cada pregunta):
-    PASO 1: Determina la respuesta correcta y redacta la explicacion comenzando con "La respuesta correcta es [Letra] porque...".
-    PASO 2: Basandote UNICAMENTE en el Paso 1, asigna correct_index (0=A, 1=B, 2=C, 3=D).
-
-    REGLA DE ORO: Si en la explicacion escribes "La respuesta correcta es B", correct_index DEBE ser 1. Siempre.
-    BLINDAJE: Para cada pregunta, verifica: La explanation confirma que la opcion [X] es la correcta? Entonces correct_index = valor numerico de [X].
+    PROCESO INTERNO:
+    1. Determina la respuesta correcta.
+    2. Escribe la explicacion: "La respuesta correcta es [Letra] porque..."
+    3. Asigna correct_index basandote en esa letra (0=A, 1=B...).
     
     Formato JSON:
     [
