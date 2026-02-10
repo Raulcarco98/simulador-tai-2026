@@ -224,108 +224,19 @@ def get_base_prompt(num_questions, difficulty):
     """
 
 
-# === CORE API CALL (Single Request + Project Rotation) ===
-async def _generate_request(prompt, context_text, context_limit, log_fn=None):
-    """
-    Single API call with project-aware rotation and exponential backoff.
-    Projects are independent GCP projects with separate 429 quotas.
-    """
-    active_client, project_label = _get_client()
-    if not active_client:
-        return []
-    
-    def log(msg):
-        _safe_print(msg)
-        if log_fn:
-            log_fn(msg)
-    
-    max_retries = 6  # More retries since rotation is fast
-    
-    # Build prompt
-    final_prompt = prompt
-    if context_text:
-        cleaned = _clean_text(context_text[:context_limit])
-        final_prompt += f"\n\nCONTENIDO PROPORCIONADO:\n{cleaned}"
-
-    for attempt in range(max_retries):
-        try:
-            active_client, project_label = _get_client()
-            log(f"[{project_label}] Llamando a {MODEL_NAME} (intento {attempt+1}/{max_retries})...")
-            response = await active_client.aio.models.generate_content(
-                model=MODEL_NAME,
-                contents=final_prompt,
-                config=generation_config,
-            )
-            
-            raw_text = response.text
-            log(f"[{project_label}] Respuesta recibida. Parseando JSON...")
-            
-            # Robust JSON parsing
-            try:
-                result = json.loads(raw_text)
-                log(f"[{project_label}] JSON OK: {len(result)} preguntas.")
-                return result
-            except json.JSONDecodeError:
-                log(f"[{project_label}] JSON directo fallo. Limpiando...")
-                cleaned_json = _clean_json_response(raw_text)
-                try:
-                    result = json.loads(cleaned_json)
-                    log(f"[{project_label}] JSON limpiado: {len(result)} preguntas recuperadas.")
-                    return result
-                except json.JSONDecodeError as je:
-                    log(f"[{project_label}] JSON irrecuperable: {je}. Raw: {raw_text[:150]}...")
-                    return []
-        
-        except genai_errors.ClientError as e:
-            error_str = str(e)
-            is_rate_limit = "429" in error_str or "RESOURCE_EXHAUSTED" in error_str
-            
-            if is_rate_limit:
-                old_label, new_label = _rotate_project()
-                if old_label:
-                    # Mandatory 20s cooling period to avoid IP ban
-                    log(f"[DEBUG] Limite alcanzado. Esperando 20 segundos para reintentar con el siguiente proyecto...")
-                    await asyncio.sleep(20)
-                    continue
-                elif attempt < max_retries - 1:
-                    wait_time = 10 * (2 ** min(attempt, 3))
-                    log(f"[DEBUG] Todos los proyectos agotados. Esperando {wait_time}s...")
-                    await asyncio.sleep(wait_time)
-                    continue
-            
-            log(f"[ERROR] ClientError: {error_str[:200]}")
-            return []
-                    
-        except Exception as e:
-            error_str = str(e)
-            log(f"[ERROR] {type(e).__name__}: {error_str[:200]}")
-            
-            if attempt < max_retries - 1:
-                wait_time = 5 * (2 ** min(attempt, 3))
-                log(f"[DEBUG] Reintentando en {wait_time}s...")
-                await asyncio.sleep(wait_time)
-                continue
-            return []
-
-    return []
-
-
 # === STREAMING GENERATOR (Single Request Strategy) ===
 async def generate_exam_streaming(num_questions: int, context_text: str = None, topic: str = None, difficulty: str = "Intermedio"):
     """
     Async generator: single unified request for all questions.
     Yields log events and the full question list.
     """
-    logs_queue = []
-    
-    def collect_log(msg):
-        logs_queue.append(msg)
     
     if not clients:
         yield {"type": "log", "msg": "[ERROR] No hay API Keys configuradas. Revisa .env"}
         yield [{"id": 1, "question": "Error: API Key no configurada", "options": ["A","B","C","D"], "correct_index": 0, "explanation": "Configura .env"}]
         return
 
+    # Log inicial
     _, initial_project = _get_client()
     yield {"type": "log", "msg": f"[INICIO] {num_questions} preguntas | Dificultad: {difficulty} | Proyectos: {len(clients)}"}
     yield {"type": "log", "msg": f"[INICIO] Proyecto activo: {initial_project}"}
@@ -334,24 +245,87 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
         context_text = f"Tema solicitado: {topic}"
         yield {"type": "log", "msg": f"[INICIO] Tema: {topic}"}
     
+    # Preparar Prompt y Contexto
+    prompt = get_base_prompt(num_questions, difficulty)
     if context_text:
         clean_len = len(_clean_text(context_text))
         yield {"type": "log", "msg": f"[INICIO] Contexto: {clean_len} caracteres"}
+        cleaned_context = _clean_text(context_text[:30000])
+        prompt += f"\n\nCONTENIDO PROPORCIONADO:\n{cleaned_context}"
 
-    # === SINGLE UNIFIED REQUEST ===
     yield {"type": "log", "msg": f"\n[GENERANDO] Peticion unica de {num_questions} preguntas..."}
+
+    # === CORE GENERATION LOOP INLINED ===
+    raw_questions = []
+    max_retries = 6 
+
+    for attempt in range(max_retries):
+        try:
+            active_client, project_label = _get_client()
+            yield {"type": "log", "msg": f"[{project_label}] Llamando a {MODEL_NAME} (intento {attempt+1}/{max_retries})..."}
+            _safe_print(f"[{project_label}] Request start...")
+            
+            response = await active_client.aio.models.generate_content(
+                model=MODEL_NAME,
+                contents=prompt,
+                config=generation_config,
+            )
+            
+            raw_text = response.text
+            yield {"type": "log", "msg": f"[{project_label}] Respuesta recibida. Parseando JSON..."}
+            
+            # Robust JSON parsing
+            try:
+                raw_questions = json.loads(raw_text)
+                yield {"type": "log", "msg": f"[{project_label}] JSON OK: {len(raw_questions)} preguntas."}
+                break # Success!
+            except json.JSONDecodeError:
+                yield {"type": "log", "msg": f"[{project_label}] JSON directo fallo. Limpiando..."}
+                cleaned_json = _clean_json_response(raw_text)
+                try:
+                    raw_questions = json.loads(cleaned_json)
+                    yield {"type": "log", "msg": f"[{project_label}] JSON limpiado: {len(raw_questions)} preguntas recuperadas."}
+                    break # Success!
+                except json.JSONDecodeError as je:
+                    yield {"type": "log", "msg": f"[{project_label}] JSON irrecuperable: {je}. Raw: {raw_text[:150]}..."}
+                    # Non-retriable error unless we want to retry generation? 
+                    # Usually bad JSON is result of bad generation, so maybe retry?
+                    # For now, treat as failure of this attempt.
+        
+        except genai_errors.ClientError as e:
+            error_str = str(e)
+            is_rate_limit = "429" in error_str or "RESOURCE_EXHAUSTED" in error_str
+            
+            if is_rate_limit:
+                old_label, new_label = _rotate_project()
+                if old_label:
+                    # Mandatory 20s cooling period to avoid IP ban. Yield message BEFORE sleep.
+                    yield {"type": "log", "msg": f"[DEBUG] Limite alcanzado. Esperando 20 segundos para reintentar con el siguiente proyecto..."}
+                    _safe_print(f"[DEBUG] 20s sleep triggered...")
+                    await asyncio.sleep(20)
+                    continue
+                elif attempt < max_retries - 1:
+                    wait_time = 10 * (2 ** min(attempt, 3))
+                    yield {"type": "log", "msg": f"[DEBUG] Todos los proyectos agotados. Esperando {wait_time}s..."}
+                    await asyncio.sleep(wait_time)
+                    continue
+            
+            yield {"type": "log", "msg": f"[ERROR] ClientError: {error_str[:200]}"}
+            # Continue to next attempt if possible
+                    
+        except Exception as e:
+            error_str = str(e)
+            yield {"type": "log", "msg": f"[ERROR] {type(e).__name__}: {error_str[:200]}"}
+            
+            if attempt < max_retries - 1:
+                wait_time = 5 * (2 ** min(attempt, 3))
+                yield {"type": "log", "msg": f"[DEBUG] Reintentando en {wait_time}s..."}
+                await asyncio.sleep(wait_time)
+                continue
     
-    prompt = get_base_prompt(num_questions, difficulty)
-    
-    logs_queue.clear()
-    raw_questions = await _generate_request(prompt, context_text, 30000, log_fn=collect_log)
-    
-    # Flush collected internal logs
-    for log_msg in logs_queue:
-        yield {"type": "log", "msg": f"  {log_msg}"}
-    
+    # === VALIDATION & OUTPUT ===
     if isinstance(raw_questions, list) and raw_questions:
-        # === BLINDAJE FINAL: validate every question ===
+        # === BLINDAJE FINAL ===
         yield {"type": "log", "msg": f"\n[BLINDAJE] Validando coherencia de {len(raw_questions)} preguntas..."}
         
         validated = []
@@ -373,4 +347,4 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
         yield {"type": "log", "msg": f"\n[COMPLETO] {len(validated)} preguntas generadas y validadas."}
         yield validated
     else:
-        yield {"type": "log", "msg": "[ERROR] No se generaron preguntas. Revisa los logs anteriores."}
+        yield {"type": "log", "msg": "[ERROR] No se generaron preguntas tras todos los intentos."}
