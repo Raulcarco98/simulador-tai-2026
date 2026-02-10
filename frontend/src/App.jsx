@@ -26,6 +26,7 @@ function App() {
     formData.append("num_questions", settings.numQuestions);
     formData.append("difficulty", settings.difficulty || "Intermedio");
 
+
     if (settings.topic) {
       formData.append("topic", settings.topic);
     }

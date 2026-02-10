@@ -25,7 +25,7 @@ export default function StartScreen({ onStart }) {
                     transition={{ duration: 0.5 }}
                 >
                     <div className="inline-block px-3 py-1 mb-4 text-xs font-semibold tracking-wider text-blue-600 dark:text-blue-400 uppercase bg-blue-100 dark:bg-blue-400/10 rounded-full border border-blue-200 dark:border-blue-400/20">
-                        TAI Pro 2026 - v2.2 Universal
+                        TAI Pro 2026 - v2.3 Universal
                     </div>
                     <h1 className="text-4xl md:text-6xl font-black text-slate-900 dark:text-white mb-6 leading-tight tracking-tight">
                         Estudia <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">Cualquier Tema</span> con IA
@@ -104,26 +104,27 @@ export default function StartScreen({ onStart }) {
 
                             {/* Difficulty */}
                             <div className="relative">
+                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
+                                    Dificultad
+                                </label>
                                 <select
                                     value={difficulty}
                                     onChange={(e) => setDifficulty(e.target.value)}
-                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-xl px-4 py-3 appearance-none focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium text-sm"
+                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white rounded-xl px-4 py-2 appearance-none focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium text-sm"
                                 >
-                                    <option value="Básico">Nivel Básico</option>
-                                    <option value="Intermedio">Nivel Intermedio</option>
-                                    <option value="Experto">Nivel Experto</option>
+                                    <option value="Básico">Básico</option>
+                                    <option value="Intermedio">Intermedio</option>
+                                    <option value="Experto">Experto</option>
                                 </select>
-                                <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
-                                    <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-                                </div>
                             </div>
                         </div>
+
                     </div>
 
                     <button
                         onClick={handleStart}
                         disabled={!file && !topic && false} // Optional: force inputs
-                        className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl font-bold text-lg shadow-lg shadow-blue-500/25 transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-blue-500/25"
                     >
                         <span>Generar Examen</span>
                         <Play className="w-5 h-5 fill-current opacity-80 group-hover:translate-x-1 transition-transform" />
