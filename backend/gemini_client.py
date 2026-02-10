@@ -40,6 +40,36 @@ def _clean_text(text):
     return text.strip()
 
 
+def _segment_text(text, num_segments):
+    """
+    Divide el texto en N segmentos proporcionales distribuidos uniformemente.
+    Cada segmento cubre una franja distinta del documento para garantizar cobertura total.
+    Returns a list of text segments.
+    """
+    if not text or num_segments <= 0:
+        return [text] if text else [""]
+    
+    cleaned = _clean_text(text)
+    total_len = len(cleaned)
+    
+    if total_len < 200 or num_segments == 1:
+        return [cleaned]
+    
+    # Calculate segment size with overlap for context continuity
+    segment_size = total_len // num_segments
+    overlap = min(100, segment_size // 4)  # Small overlap to avoid cutting mid-sentence
+    
+    segments = []
+    for i in range(num_segments):
+        start = max(0, i * segment_size - overlap)
+        end = min(total_len, (i + 1) * segment_size + overlap)
+        segment = cleaned[start:end].strip()
+        if segment:
+            segments.append(segment)
+    
+    return segments if segments else [cleaned]
+
+
 def validate_and_fix_question(question):
     """
     Checks if the explanation states the correct answer letter via multiple patterns
@@ -87,7 +117,7 @@ def get_base_prompt(num_questions, difficulty):
     - Temas: Casos prácticos, sintaxis y excepciones.
     - Estructura: 25% preguntas negativas (¿Cuál es FALSA?).
     - Distractores: Cambia cifras (10→15 días), confunde leyes (39↔40), usa siglas parecidas (ENS↔ENI).
-    - Cobertura: Distribuye preguntas por TODO el contexto, no solo el inicio.
+    - Cobertura: Tu objetivo es evaluar el conocimiento de TODO el temario. Se te proporcionan fragmentos de diferentes secciones; genera una pregunta específica para CADA fragmento sin omitir los finales.
     - Concisión: Explicación de 1 línea (máx 15 palabras).
     - Formato: Responde ÚNICAMENTE el array JSON, sin texto previo ni posterior.
 
@@ -97,6 +127,8 @@ def get_base_prompt(num_questions, difficulty):
 
     REGLA DE ORO: Si en la explicación mencionas una letra (ej: "Es la B"), correct_index DEBE ser obligatoriamente el índice de esa letra.
     En preguntas negativas, correct_index = índice de la opción FALSA.
+
+    BLINDAJE: Para cada pregunta, verifica internamente: ¿La explanation confirma que la opción [X] es la correcta? Entonces correct_index debe ser imperativamente el valor numérico de [X].
 
     JSON SCHEMA:
     [
@@ -116,6 +148,7 @@ def get_base_prompt(num_questions, difficulty):
     NIVEL: {difficulty.upper()} (Básico/Intermedio)
     ESTILO: Preguntas claras. Explicación didáctica.
     REALISMO: Usa "Todas/Ninguna es correcta" en 20% de preguntas.
+    COBERTURA: Tu objetivo es evaluar el conocimiento de TODO el temario proporcionado. Genera una pregunta específica para cada fragmento sin omitir los finales.
     
     CRITÉRIO JSON:
     - "explanation" empieza con "La respuesta correcta es [Letra]...".
@@ -125,7 +158,7 @@ def get_base_prompt(num_questions, difficulty):
     PASO 2: Basándote ÚNICAMENTE en el Paso 1, asigna correct_index (0=A, 1=B, 2=C, 3=D).
 
     REGLA DE ORO: Si en la explicación escribes "La respuesta correcta es B", correct_index DEBE ser 1. Siempre.
-    En preguntas negativas, correct_index = índice de la opción FALSA.
+    BLINDAJE: Para cada pregunta, verifica: ¿La explanation confirma que la opción [X] es la correcta? Entonces correct_index = valor numérico de [X].
     
     Formato JSON:
     [
@@ -181,7 +214,7 @@ async def _generate_chunk(chunk_prompt, context_text, context_limit):
 async def generate_exam_streaming(num_questions: int, context_text: str = None, topic: str = None, difficulty: str = "Intermedio"):
     """
     Async generator that yields batches of 5 validated questions.
-    Each yield keeps the SSE connection alive, preventing 504 timeout.
+    Uses text segmentation to distribute context proportionally per batch.
     """
     if not API_KEY:
         yield [{"id": 1, "question": "Error: API Key no configurada", "options": ["A","B","C","D"], "correct_index": 0, "explanation": "Configura .env"}]
@@ -193,15 +226,25 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
     BATCH_SIZE = 5
     generated_count = 0
     batch_number = 0
+    
+    # Pre-segment the full text into proportional chunks (1 per question)
+    segments = _segment_text(context_text, num_questions) if context_text else []
 
     while generated_count < num_questions:
         batch_count = min(BATCH_SIZE, num_questions - generated_count)
         prompt = get_base_prompt(batch_count, difficulty)
         
-        batch_number += 1
-        print(f"--- Batch {batch_number}: Generating {batch_count} questions (offset: {generated_count}) ---")
+        # Select the segments for this batch
+        if segments:
+            batch_segments = segments[generated_count:generated_count + batch_count]
+            batch_context = "\n---\n".join(batch_segments)
+        else:
+            batch_context = None
         
-        raw_questions = await _generate_chunk(prompt, context_text, 25000)
+        batch_number += 1
+        print(f"--- Batch {batch_number}: {batch_count} questions (offset: {generated_count}, segments: {len(batch_segments) if segments else 0}) ---")
+        
+        raw_questions = await _generate_chunk(prompt, batch_context, 25000)
         
         if isinstance(raw_questions, list) and raw_questions:
             validated = []
@@ -217,7 +260,7 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
             print(f"Batch {batch_number} FAILED. Stopping generation.")
             break
         
-        # Cooldown between batches to avoid rate limit on second batch
+        # Cooldown between batches to avoid rate limit
         if generated_count < num_questions:
             print("Cooldown 3s between batches...")
             await asyncio.sleep(3)
