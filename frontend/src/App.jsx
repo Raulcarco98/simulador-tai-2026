@@ -16,6 +16,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [config, setConfig] = useState(null);
   const [streamProgress, setStreamProgress] = useState(0);
+  const [debugInfo, setDebugInfo] = useState(null);
 
   // Generate Exam (SSE Streaming)
   const handleStartExam = async (settings) => {
@@ -23,6 +24,7 @@ function App() {
     setLoading(true);
     setGameState("generating");
     setStreamProgress(0);
+    setDebugInfo(null);
 
     const formData = new FormData();
     formData.append("num_questions", settings.numQuestions);
@@ -69,10 +71,16 @@ function App() {
             if (payload === "[DONE]") continue;
             try {
               const batch = JSON.parse(payload);
+              if (!Array.isArray(batch)) {
+                console.warn("SSE batch is not an array:", payload.slice(0, 200));
+                setDebugInfo(prev => (prev || "") + "\n[NOT ARRAY] " + payload.slice(0, 500));
+                continue;
+              }
               allQuestions = [...allQuestions, ...batch];
               setStreamProgress(allQuestions.length);
             } catch (e) {
               console.warn("SSE parse error:", e);
+              setDebugInfo(prev => (prev || "") + "\n[PARSE ERROR] " + payload.slice(0, 500));
             }
           }
         }
@@ -89,12 +97,12 @@ function App() {
         setCurrentQuestionIndex(0);
         setGameState("playing");
       } else {
-        alert("Error: No se pudieron generar preguntas. Intenta de nuevo.");
+        setDebugInfo(prev => prev || "El servidor no devolvió preguntas. Revisa la API Key o intenta de nuevo.");
         setGameState("start");
       }
     } catch (error) {
       console.error("Failed to generate exam:", error);
-      alert(error.message || "Error de conexión con el servidor.");
+      setDebugInfo(prev => (prev || "") + "\n[ERROR] " + (error.message || "Error de conexión"));
       setGameState("start");
     } finally {
       setLoading(false);
@@ -220,6 +228,22 @@ function App() {
                   />
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Debug Panel - shows raw server response on error */}
+          {debugInfo && gameState === "start" && (
+            <div className="w-full max-w-2xl mt-6 p-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/40 rounded-xl">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-bold text-red-700 dark:text-red-300 uppercase tracking-wider">🐛 Debug: Error de generación</h3>
+                <button
+                  onClick={() => setDebugInfo(null)}
+                  className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+                >
+                  Cerrar
+                </button>
+              </div>
+              <pre className="text-xs text-red-800 dark:text-red-200 bg-red-100 dark:bg-red-900/40 p-3 rounded-lg overflow-x-auto max-h-48 whitespace-pre-wrap break-all">{debugInfo}</pre>
             </div>
           )}
 

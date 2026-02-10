@@ -47,6 +47,9 @@ def _clean_json_response(raw_text):
     
     text = raw_text.strip()
     
+    # Remove invisible control characters (BOM, zero-width spaces, etc.)
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ufeff\u200b\u200c\u200d\u2060]', '', text)
+    
     # Remove markdown code fences: ```json ... ``` or ``` ... ```
     text = re.sub(r'^```(?:json)?\s*\n?', '', text)
     text = re.sub(r'\n?```\s*$', '', text)
