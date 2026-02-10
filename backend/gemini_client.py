@@ -199,10 +199,15 @@ def get_base_prompt(num_questions, difficulty):
 
 
 # === CORE API CALL (google-genai + JSON cleaning + Exponential Backoff) ===
-async def _generate_chunk(chunk_prompt, context_text, context_limit):
+async def _generate_chunk(chunk_prompt, context_text, context_limit, log_fn=None):
     """Single API call with JSON robustness and exponential backoff."""
     if not API_KEY or not client:
         return []
+    
+    def log(msg):
+        print(msg)
+        if log_fn:
+            log_fn(msg)
     
     max_retries = 5
     base_delay = 15
@@ -215,7 +220,7 @@ async def _generate_chunk(chunk_prompt, context_text, context_limit):
 
     for attempt in range(max_retries):
         try:
-            print(f"Calling {MODEL_NAME} (Attempt {attempt+1})...")
+            log(f"Llamando a {MODEL_NAME} (intento {attempt+1}/{max_retries})...")
             response = await client.aio.models.generate_content(
                 model=MODEL_NAME,
                 contents=final_prompt,
@@ -223,18 +228,22 @@ async def _generate_chunk(chunk_prompt, context_text, context_limit):
             )
             
             raw_text = response.text
-            print("Generation successful. Parsing JSON...")
+            log("Respuesta recibida. Parseando JSON...")
             
             # Robust JSON parsing with cleaning
             try:
-                return json.loads(raw_text)
+                result = json.loads(raw_text)
+                log(f"JSON válido: {len(result)} preguntas parseadas.")
+                return result
             except json.JSONDecodeError:
-                print("Direct JSON parse failed. Cleaning response...")
+                log("JSON directo falló. Limpiando respuesta...")
                 cleaned_json = _clean_json_response(raw_text)
                 try:
-                    return json.loads(cleaned_json)
+                    result = json.loads(cleaned_json)
+                    log(f"JSON limpiado: {len(result)} preguntas recuperadas.")
+                    return result
                 except json.JSONDecodeError as je:
-                    print(f"JSON cleaning failed: {je}. Raw: {raw_text[:200]}...")
+                    log(f"JSON irrecuperable: {je}. Raw: {raw_text[:150]}...")
                     return []
                     
         except Exception as e:
@@ -243,35 +252,46 @@ async def _generate_chunk(chunk_prompt, context_text, context_limit):
             
             if is_rate_limit and attempt < max_retries - 1:
                 wait_time = base_delay * (2 ** attempt)
-                print(f"Rate limit (Attempt {attempt+1}). Exponential backoff: {wait_time}s...")
+                log(f"⚠️ Rate limit (intento {attempt+1}). Esperando {wait_time}s...")
                 await asyncio.sleep(wait_time)
                 continue
             
-            print(f"Generation failed: {error_str}")
+            log(f"❌ Error: {error_str[:200]}")
             return []
 
     return []
 
 
-# === STREAMING GENERATOR (2x5 batching with SSE) ===
 async def generate_exam_streaming(num_questions: int, context_text: str = None, topic: str = None, difficulty: str = "Intermedio"):
     """
-    Async generator that yields batches of 5 validated questions.
-    Uses text segmentation to distribute context proportionally per batch.
+    Async generator that yields:
+    - dict {"type": "log", "msg": "..."} for terminal logs
+    - list [...questions...] for question batches
     """
+    logs_queue = []
+    
+    def collect_log(msg):
+        logs_queue.append(msg)
+    
     if not API_KEY:
+        yield {"type": "log", "msg": "❌ API Key no configurada. Revisa .env"}
         yield [{"id": 1, "question": "Error: API Key no configurada", "options": ["A","B","C","D"], "correct_index": 0, "explanation": "Configura .env"}]
         return
 
+    yield {"type": "log", "msg": f"🚀 Iniciando generación: {num_questions} preguntas | Dificultad: {difficulty}"}
+
     if topic and not context_text:
         context_text = f"Tema solicitado: {topic}"
+        yield {"type": "log", "msg": f"📌 Tema: {topic}"}
 
     BATCH_SIZE = 5
     generated_count = 0
     batch_number = 0
     
-    # Pre-segment the full text into proportional chunks (1 per question)
+    # Pre-segment the full text into proportional chunks
     segments = _segment_text(context_text, num_questions) if context_text else []
+    if segments:
+        yield {"type": "log", "msg": f"📄 Documento segmentado en {len(segments)} fragmentos"}
 
     while generated_count < num_questions:
         batch_count = min(BATCH_SIZE, num_questions - generated_count)
@@ -285,9 +305,14 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
             batch_context = None
         
         batch_number += 1
-        print(f"--- Batch {batch_number}: {batch_count} questions (offset: {generated_count}, segments: {len(batch_segments) if segments else 0}) ---")
+        yield {"type": "log", "msg": f"\n📦 Batch {batch_number}: generando {batch_count} preguntas..."}
         
-        raw_questions = await _generate_chunk(prompt, batch_context, 25000)
+        logs_queue.clear()
+        raw_questions = await _generate_chunk(prompt, batch_context, 25000, log_fn=collect_log)
+        
+        # Flush collected logs
+        for log_msg in logs_queue:
+            yield {"type": "log", "msg": f"   {log_msg}"}
         
         if isinstance(raw_questions, list) and raw_questions:
             validated = []
@@ -297,13 +322,15 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
                     validated.append(validate_and_fix_question(q))
             
             generated_count += len(validated)
-            print(f"Batch {batch_number} complete: {len(validated)} questions. Total: {generated_count}/{num_questions}")
+            yield {"type": "log", "msg": f"✅ Batch {batch_number} OK: {len(validated)} preguntas ({generated_count}/{num_questions})"}
             yield validated
         else:
-            print(f"Batch {batch_number} FAILED. Stopping generation.")
+            yield {"type": "log", "msg": f"❌ Batch {batch_number} FALLIDO. Deteniendo generación."}
             break
         
-        # Cooldown between batches to avoid rate limit
+        # Cooldown between batches
         if generated_count < num_questions:
-            print("Cooldown 3s between batches...")
+            yield {"type": "log", "msg": "⏳ Cooldown 3s entre batches..."}
             await asyncio.sleep(3)
+    
+    yield {"type": "log", "msg": f"\n🏁 Generación completa: {generated_count} preguntas generadas."}

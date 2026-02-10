@@ -60,9 +60,12 @@ async def create_exam(
     print(f"Generating -> Questions: {num_questions} | Difficulty: {difficulty} | Topic: {topic or 'Default'}")
 
     async def event_stream():
-        """SSE stream: yields batches of questions to keep connection alive."""
-        async for batch in generate_exam_streaming(num_questions, context_text, topic, difficulty):
-            yield f"data: {json.dumps(batch)}\n\n"
+        """SSE stream: yields logs and question batches."""
+        async for item in generate_exam_streaming(num_questions, context_text, topic, difficulty):
+            if isinstance(item, dict) and item.get("type") == "log":
+                yield f"data: {json.dumps(item)}\n\n"
+            elif isinstance(item, list):
+                yield f"data: {json.dumps(item)}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(

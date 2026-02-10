@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Timer from "./components/Timer";
 import QuestionCard from "./components/QuestionCard";
 import Dashboard from "./components/Dashboard";
 import StartScreen from "./components/StartScreen";
 import ThemeToggle from "./components/ThemeToggle";
-import { BrainCircuit } from "lucide-react";
+import { BrainCircuit, Terminal } from "lucide-react";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
@@ -17,6 +17,21 @@ function App() {
   const [config, setConfig] = useState(null);
   const [streamProgress, setStreamProgress] = useState(0);
   const [debugInfo, setDebugInfo] = useState(null);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalLogs, setTerminalLogs] = useState([]);
+  const terminalEndRef = useRef(null);
+
+  // Auto-scroll terminal to bottom
+  useEffect(() => {
+    if (terminalEndRef.current) {
+      terminalEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [terminalLogs]);
+
+  const addLog = (msg) => {
+    const timestamp = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setTerminalLogs(prev => [...prev, `[${timestamp}] ${msg}`]);
+  };
 
   // Generate Exam (SSE Streaming)
   const handleStartExam = async (settings) => {
@@ -25,6 +40,8 @@ function App() {
     setGameState("generating");
     setStreamProgress(0);
     setDebugInfo(null);
+    setTerminalLogs([]);
+    addLog("Conectando con el servidor...");
 
     const formData = new FormData();
     formData.append("num_questions", settings.numQuestions);
@@ -68,18 +85,29 @@ function App() {
           const trimmed = part.trim();
           if (trimmed.startsWith("data: ")) {
             const payload = trimmed.slice(6);
-            if (payload === "[DONE]") continue;
+            if (payload === "[DONE]") {
+              addLog("Stream finalizado.");
+              continue;
+            }
             try {
-              const batch = JSON.parse(payload);
-              if (!Array.isArray(batch)) {
-                console.warn("SSE batch is not an array:", payload.slice(0, 200));
+              const parsed = JSON.parse(payload);
+
+              // Log event from backend
+              if (parsed && parsed.type === "log") {
+                addLog(parsed.msg);
+                continue;
+              }
+
+              // Question batch
+              if (!Array.isArray(parsed)) {
+                addLog(`[WARN] Respuesta no es array: ${payload.slice(0, 200)}`);
                 setDebugInfo(prev => (prev || "") + "\n[NOT ARRAY] " + payload.slice(0, 500));
                 continue;
               }
-              allQuestions = [...allQuestions, ...batch];
+              allQuestions = [...allQuestions, ...parsed];
               setStreamProgress(allQuestions.length);
             } catch (e) {
-              console.warn("SSE parse error:", e);
+              addLog(`[ERROR] Parse JSON falló: ${payload.slice(0, 100)}`);
               setDebugInfo(prev => (prev || "") + "\n[PARSE ERROR] " + payload.slice(0, 500));
             }
           }
@@ -102,6 +130,7 @@ function App() {
       }
     } catch (error) {
       console.error("Failed to generate exam:", error);
+      addLog(`❌ Error fatal: ${error.message || "Error de conexión"}`);
       setDebugInfo(prev => (prev || "") + "\n[ERROR] " + (error.message || "Error de conexión"));
       setGameState("start");
     } finally {
@@ -199,6 +228,19 @@ function App() {
                 />
               </>
             )}
+            <button
+              onClick={() => setTerminalOpen(prev => !prev)}
+              className={`relative p-2 rounded-lg border transition-all duration-200 ${terminalOpen
+                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
+                : 'bg-white/50 dark:bg-slate-800/50 border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
+                }`}
+              title="Terminal de logs"
+            >
+              <Terminal className="w-5 h-5" />
+              {terminalLogs.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse" />
+              )}
+            </button>
             <ThemeToggle />
           </div>
         </header>
@@ -271,6 +313,52 @@ function App() {
             />
           )}
         </main>
+
+        {/* Terminal Panel */}
+        {terminalOpen && (
+          <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-emerald-500/30 bg-[#0d1117] shadow-2xl transition-all duration-300" style={{ height: '280px' }}>
+            <div className="flex items-center justify-between px-4 py-2 bg-[#161b22] border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <div className="flex gap-1.5">
+                  <div className="w-3 h-3 rounded-full bg-red-500" />
+                  <div className="w-3 h-3 rounded-full bg-yellow-500" />
+                  <div className="w-3 h-3 rounded-full bg-green-500" />
+                </div>
+                <span className="text-xs text-slate-400 font-mono ml-2">Terminal — Simulador TAI</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">{terminalLogs.length} líneas</span>
+                <button
+                  onClick={() => setTerminalLogs([])}
+                  className="text-xs text-slate-500 hover:text-white transition-colors px-2 py-0.5 rounded border border-white/10"
+                >
+                  Limpiar
+                </button>
+                <button
+                  onClick={() => setTerminalOpen(false)}
+                  className="text-xs text-slate-500 hover:text-white transition-colors px-2 py-0.5 rounded border border-white/10"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+            <div className="overflow-y-auto p-4 font-mono text-xs leading-relaxed" style={{ height: 'calc(100% - 40px)' }}>
+              {terminalLogs.length === 0 ? (
+                <p className="text-slate-500 italic">Esperando logs... Genera un examen para ver la actividad.</p>
+              ) : (
+                terminalLogs.map((log, i) => (
+                  <div key={i} className={`${log.includes('❌') ? 'text-red-400' :
+                    log.includes('⚠️') || log.includes('[WARN]') ? 'text-yellow-400' :
+                      log.includes('✅') ? 'text-emerald-400' :
+                        log.includes('🚀') || log.includes('🏁') ? 'text-blue-400' :
+                          'text-slate-300'
+                    }`}>{log}</div>
+                ))
+              )}
+              <div ref={terminalEndRef} />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
