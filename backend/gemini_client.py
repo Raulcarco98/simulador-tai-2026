@@ -4,16 +4,34 @@ import asyncio
 import re
 from dotenv import load_dotenv
 from google import genai
-from google.genai import types
+from google.genai import types, errors as genai_errors
 
 load_dotenv()
 
 API_KEY = os.getenv("GEMINI_API_KEY")
+API_KEY_2 = os.getenv("GEMINI_API_KEY_2")
+API_KEYS = [k for k in [API_KEY, API_KEY_2] if k]
+current_key_index = 0
 
-# Create client (new google-genai library)
-client = None
-if API_KEY:
-    client = genai.Client(api_key=API_KEY)
+# Create clients for each key
+clients = []
+for key in API_KEYS:
+    clients.append(genai.Client(api_key=key))
+
+def _get_client():
+    """Returns the current active client."""
+    global current_key_index
+    if not clients:
+        return None
+    return clients[current_key_index % len(clients)]
+
+def _rotate_key():
+    """Switches to the next API key."""
+    global current_key_index
+    if len(clients) > 1:
+        current_key_index = (current_key_index + 1) % len(clients)
+        return True
+    return False
 
 # Generation config
 generation_config = types.GenerateContentConfig(
@@ -200,8 +218,9 @@ def get_base_prompt(num_questions, difficulty):
 
 # === CORE API CALL (google-genai + JSON cleaning + Exponential Backoff) ===
 async def _generate_chunk(chunk_prompt, context_text, context_limit, log_fn=None):
-    """Single API call with JSON robustness and exponential backoff."""
-    if not API_KEY or not client:
+    """Single API call with JSON robustness, key rotation, and exponential backoff."""
+    active_client = _get_client()
+    if not active_client:
         return []
     
     def log(msg):
@@ -210,7 +229,7 @@ async def _generate_chunk(chunk_prompt, context_text, context_limit, log_fn=None
             log_fn(msg)
     
     max_retries = 5
-    base_delay = 15
+    base_delay = 10
 
     # Build prompt once
     final_prompt = chunk_prompt
@@ -220,8 +239,9 @@ async def _generate_chunk(chunk_prompt, context_text, context_limit, log_fn=None
 
     for attempt in range(max_retries):
         try:
-            log(f"Llamando a {MODEL_NAME} (intento {attempt+1}/{max_retries})...")
-            response = await client.aio.models.generate_content(
+            active_client = _get_client()
+            log(f"Llamando a {MODEL_NAME} (intento {attempt+1}/{max_retries}, key {current_key_index+1}/{len(clients)})...")
+            response = await active_client.aio.models.generate_content(
                 model=MODEL_NAME,
                 contents=final_prompt,
                 config=generation_config,
@@ -245,18 +265,35 @@ async def _generate_chunk(chunk_prompt, context_text, context_limit, log_fn=None
                 except json.JSONDecodeError as je:
                     log(f"JSON irrecuperable: {je}. Raw: {raw_text[:150]}...")
                     return []
+        
+        except genai_errors.ClientError as e:
+            error_str = str(e)
+            is_rate_limit = "429" in error_str or "RESOURCE_EXHAUSTED" in error_str
+            
+            if is_rate_limit:
+                # Try rotating key first
+                if _rotate_key():
+                    log(f"⚠️ Rate limit. Rotando a API Key {current_key_index+1}...")
+                    await asyncio.sleep(2)
+                    continue
+                elif attempt < max_retries - 1:
+                    wait_time = base_delay * (2 ** attempt)
+                    log(f"⚠️ Rate limit en todas las keys. Esperando {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                    continue
+            
+            log(f"❌ ClientError: {error_str[:200]}")
+            return []
                     
         except Exception as e:
             error_str = str(e)
-            is_rate_limit = "429" in error_str or "ResourceExhausted" in error_str
+            log(f"❌ Error inesperado: {type(e).__name__}: {error_str[:200]}")
             
-            if is_rate_limit and attempt < max_retries - 1:
+            if attempt < max_retries - 1:
                 wait_time = base_delay * (2 ** attempt)
-                log(f"⚠️ Rate limit (intento {attempt+1}). Esperando {wait_time}s...")
+                log(f"   Reintentando en {wait_time}s...")
                 await asyncio.sleep(wait_time)
                 continue
-            
-            log(f"❌ Error: {error_str[:200]}")
             return []
 
     return []
@@ -273,12 +310,12 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
     def collect_log(msg):
         logs_queue.append(msg)
     
-    if not API_KEY:
-        yield {"type": "log", "msg": "❌ API Key no configurada. Revisa .env"}
+    if not clients:
+        yield {"type": "log", "msg": "❌ No hay API Keys configuradas. Revisa .env"}
         yield [{"id": 1, "question": "Error: API Key no configurada", "options": ["A","B","C","D"], "correct_index": 0, "explanation": "Configura .env"}]
         return
 
-    yield {"type": "log", "msg": f"🚀 Iniciando generación: {num_questions} preguntas | Dificultad: {difficulty}"}
+    yield {"type": "log", "msg": f"🚀 Iniciando generación: {num_questions} preguntas | Dificultad: {difficulty} | Keys: {len(clients)}"}
 
     if topic and not context_text:
         context_text = f"Tema solicitado: {topic}"
