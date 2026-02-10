@@ -299,10 +299,13 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
             if is_rate_limit:
                 old_label, new_label = _rotate_project()
                 if old_label:
-                    # Mandatory 20s cooling period to avoid IP ban. Yield message BEFORE sleep.
-                    yield {"type": "log", "msg": f"[DEBUG] Limite alcanzado. Esperando 20 segundos para reintentar con el siguiente proyecto..."}
-                    _safe_print(f"[DEBUG] 20s sleep triggered...")
-                    await asyncio.sleep(20)
+                    # Progressive backoff: 5s, 10s, then 20s cap
+                    backoff_times = [5, 10]
+                    wait_time = backoff_times[attempt] if attempt < len(backoff_times) else 20
+                    
+                    yield {"type": "log", "msg": f"[DEBUG] Limite alcanzado. Reintentando en {wait_time}s con el siguiente proyecto..."}
+                    _safe_print(f"[DEBUG] {wait_time}s sleep triggered...")
+                    await asyncio.sleep(wait_time)
                     continue
                 elif attempt < max_retries - 1:
                     wait_time = 10 * (2 ** min(attempt, 3))
