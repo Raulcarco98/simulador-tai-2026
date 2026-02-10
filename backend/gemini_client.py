@@ -224,7 +224,11 @@ async def _generate_chunk(chunk_prompt, context_text, context_limit, log_fn=None
         return []
     
     def log(msg):
-        print(msg)
+        # Print with encoding safety for Windows cp1252 console
+        try:
+            print(msg)
+        except UnicodeEncodeError:
+            print(msg.encode('ascii', 'replace').decode('ascii'))
         if log_fn:
             log_fn(msg)
     
