@@ -1,5 +1,23 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, XCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { CheckCircle, XCircle, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
+
+// Frontend coherence checker: detects if explanation letter mismatches correct_index
+function detectDiscrepancy(question) {
+    if (!question?.explanation) return false;
+    const explanation = question.explanation;
+    const letterMap = { A: 0, B: 1, C: 2, D: 3 };
+
+    // Pattern: "respuesta correcta es [la] X"
+    let match = explanation.match(/respuesta\s+correcta\s+(?:es|sea)\s+(?:la\s+)?([A-D])\b/i);
+    if (!match) match = explanation.match(/[Cc]orrecta:\s*\[?([A-D])\]?/);
+    if (!match) match = explanation.match(/^\s*[Ee]s\s+la\s+([A-D])\b/);
+
+    if (match) {
+        const expectedIndex = letterMap[match[1].toUpperCase()];
+        return expectedIndex !== undefined && expectedIndex !== question.correct_index;
+    }
+    return false;
+}
 
 export default function QuestionCard({
     question,
@@ -13,6 +31,7 @@ export default function QuestionCard({
     onFinish,
     isReview = false
 }) {
+    const hasDiscrepancy = showResult && detectDiscrepancy(question);
 
     return (
         <motion.div
@@ -78,6 +97,12 @@ export default function QuestionCard({
                         <p className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed mb-3">
                             {question.explanation}
                         </p>
+                        {hasDiscrepancy && (
+                            <div className="flex items-center gap-2 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 rounded-lg text-amber-700 dark:text-amber-300 text-xs">
+                                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                                <span>Posible discrepancia detectada entre la explicación y la respuesta marcada.</span>
+                            </div>
+                        )}
                     </motion.div>
                 )}
             </AnimatePresence>

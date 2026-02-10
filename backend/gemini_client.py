@@ -91,9 +91,12 @@ def get_base_prompt(num_questions, difficulty):
     - Concisión: Explicación de 1 línea (máx 15 palabras).
     - Formato: Responde ÚNICAMENTE el array JSON, sin texto previo ni posterior.
 
-    COHERENCIA CRÍTICA:
-    - Antes de cerrar el JSON, verifica que correct_index apunte EXACTAMENTE a la opción que validas en la explanation.
-    - En preguntas negativas, correct_index debe ser el índice de la opción intrínsecamente FALSA o no requerida según la ley.
+    PROCESO INTERNO (para cada pregunta):
+    PASO 1: Determina la respuesta correcta y redacta la explicación breve.
+    PASO 2: Basándote ÚNICAMENTE en el Paso 1, asigna correct_index (0=A, 1=B, 2=C, 3=D).
+
+    REGLA DE ORO: Si en la explicación mencionas una letra (ej: "Es la B"), correct_index DEBE ser obligatoriamente el índice de esa letra.
+    En preguntas negativas, correct_index = índice de la opción FALSA.
 
     JSON SCHEMA:
     [
@@ -117,9 +120,12 @@ def get_base_prompt(num_questions, difficulty):
     CRITÉRIO JSON:
     - "explanation" empieza con "La respuesta correcta es [Letra]...".
     
-    COHERENCIA CRÍTICA:
-    - Antes de cerrar el JSON, verifica que correct_index apunte EXACTAMENTE a la opción que validas en la explanation.
-    - En preguntas negativas, correct_index debe ser el índice de la opción FALSA o no requerida.
+    PROCESO INTERNO (para cada pregunta):
+    PASO 1: Determina la respuesta correcta y redacta la explicación comenzando con "La respuesta correcta es [Letra] porque...".
+    PASO 2: Basándote ÚNICAMENTE en el Paso 1, asigna correct_index (0=A, 1=B, 2=C, 3=D).
+
+    REGLA DE ORO: Si en la explicación escribes "La respuesta correcta es B", correct_index DEBE ser 1. Siempre.
+    En preguntas negativas, correct_index = índice de la opción FALSA.
     
     Formato JSON:
     [
