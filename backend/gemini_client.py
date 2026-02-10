@@ -283,9 +283,9 @@ async def _generate_request(prompt, context_text, context_limit, log_fn=None):
             if is_rate_limit:
                 old_label, new_label = _rotate_project()
                 if old_label:
-                    # Fast switch: independent projects = independent quotas
-                    log(f"[DEBUG] {old_label} agotado. Conmutando a {new_label}...")
-                    await asyncio.sleep(2)  # Short pause, different project
+                    # Mandatory 20s cooling period to avoid IP ban
+                    log(f"[DEBUG] Limite alcanzado. Esperando 20 segundos para reintentar con el siguiente proyecto...")
+                    await asyncio.sleep(20)
                     continue
                 elif attempt < max_retries - 1:
                     wait_time = 10 * (2 ** min(attempt, 3))
