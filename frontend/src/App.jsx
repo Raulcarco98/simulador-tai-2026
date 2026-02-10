@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Timer from "./components/Timer";
 import QuestionCard from "./components/QuestionCard";
 import Dashboard from "./components/Dashboard";
@@ -11,21 +11,22 @@ const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 function App() {
   const [gameState, setGameState] = useState("start"); // start, generating, playing, finished
   const [questions, setQuestions] = useState([]);
-  const [answers, setAnswers] = useState([]); // Array of { questionId, selectedOption, isCorrect, answered }
+  const [answers, setAnswers] = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [config, setConfig] = useState(null);
+  const [streamProgress, setStreamProgress] = useState(0);
 
-  // Generate Exam
+  // Generate Exam (SSE Streaming)
   const handleStartExam = async (settings) => {
     setConfig(settings);
     setLoading(true);
     setGameState("generating");
+    setStreamProgress(0);
 
     const formData = new FormData();
     formData.append("num_questions", settings.numQuestions);
     formData.append("difficulty", settings.difficulty || "Intermedio");
-
 
     if (settings.topic) {
       formData.append("topic", settings.topic);
@@ -39,12 +40,47 @@ function App() {
         method: "POST",
         body: formData,
       });
-      const data = await res.json();
 
-      if (Array.isArray(data) && data.length > 0) {
-        setQuestions(data);
-        // Initialize answers array
-        setAnswers(data.map(q => ({
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || `Error del servidor (${res.status})`);
+      }
+
+      // === SSE STREAM READER ===
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let allQuestions = [];
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parse SSE lines (format: "data: <json>\n\n")
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop(); // Keep incomplete part in buffer
+
+        for (const part of parts) {
+          const trimmed = part.trim();
+          if (trimmed.startsWith("data: ")) {
+            const payload = trimmed.slice(6);
+            if (payload === "[DONE]") continue;
+            try {
+              const batch = JSON.parse(payload);
+              allQuestions = [...allQuestions, ...batch];
+              setStreamProgress(allQuestions.length);
+            } catch (e) {
+              console.warn("SSE parse error:", e);
+            }
+          }
+        }
+      }
+
+      if (allQuestions.length > 0) {
+        setQuestions(allQuestions);
+        setAnswers(allQuestions.map(q => ({
           questionId: q.id,
           selectedOption: null,
           isCorrect: false,
@@ -58,10 +94,11 @@ function App() {
       }
     } catch (error) {
       console.error("Failed to generate exam:", error);
-      alert("Error de conexión con el servidor.");
+      alert(error.message || "Error de conexión con el servidor.");
       setGameState("start");
     } finally {
       setLoading(false);
+      setStreamProgress(0);
     }
   };
 
@@ -169,7 +206,20 @@ function App() {
             <div className="flex flex-col items-center justify-center text-center">
               <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
               <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Generando Examen con IA...</h2>
-              <p className="text-slate-600 dark:text-slate-400 max-w-md">Analizando contexto y creando preguntas personalizadas. Esto puede tardar unos segundos.</p>
+              <p className="text-slate-600 dark:text-slate-400 max-w-md">
+                {streamProgress > 0
+                  ? `${streamProgress} / ${config?.numQuestions || '?'} preguntas generadas...`
+                  : "Conectando con Gemini. Esto puede tardar unos segundos."
+                }
+              </p>
+              {streamProgress > 0 && (
+                <div className="w-64 h-2 bg-slate-200 dark:bg-slate-700 rounded-full mt-4 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-500"
+                    style={{ width: `${(streamProgress / (config?.numQuestions || 10)) * 100}%` }}
+                  />
+                </div>
+              )}
             </div>
           )}
 

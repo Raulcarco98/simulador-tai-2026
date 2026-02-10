@@ -8,7 +8,7 @@ export default function Dashboard({ answers, questions, onRestart, onRetry }) {
     // Logic: Correct - (Errors / 3)
     const correctCount = answers.filter(a => a.isCorrect).length;
     const incorrectCount = answers.filter(a => a.answered && !a.isCorrect).length;
-    const unansweredCount = questions.length - answers.length; // Or explicit unanswered
+    const unansweredCount = answers.filter(a => !a.answered).length;
 
     const rawScore = correctCount - (incorrectCount / 3);
     const maxScore = questions.length;

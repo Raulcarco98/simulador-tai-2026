@@ -3,7 +3,6 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 let mainWindow;
-let backendProcess;
 
 function createWindow() {
     mainWindow = new BrowserWindow({

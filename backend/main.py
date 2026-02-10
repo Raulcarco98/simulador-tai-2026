@@ -1,18 +1,23 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 import os
+import json
 from dotenv import load_dotenv
 from pypdf import PdfReader
 import io
-from gemini_client import generate_exam
+from gemini_client import generate_exam_streaming
 
 load_dotenv()
 
 app = FastAPI()
 
+# CORS: Restrict to known origins in production
+ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -53,6 +58,18 @@ async def create_exam(
              print("Warning: Extracted text is too short or empty.")
     
     print(f"Generating -> Questions: {num_questions} | Difficulty: {difficulty} | Topic: {topic or 'Default'}")
-    
-    questions = await generate_exam(num_questions, context_text, topic, difficulty)
-    return questions
+
+    async def event_stream():
+        """SSE stream: yields batches of questions to keep connection alive."""
+        async for batch in generate_exam_streaming(num_questions, context_text, topic, difficulty):
+            yield f"data: {json.dumps(batch)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Prevents Nginx/proxy buffering
+        }
+    )

@@ -78,22 +78,6 @@ export default function QuestionCard({
                         <p className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed mb-3">
                             {question.explanation}
                         </p>
-
-                        {!question.isCorrect && selectedOption !== null && selectedOption !== question.correct_index && question.refutations && question.refutations[String(selectedOption)] && (
-                            <motion.div
-                                initial={{ opacity: 0, scale: 0.95 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                className="p-3 bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-900/30 rounded-lg"
-                            >
-                                <h4 className="text-xs font-bold text-rose-600 dark:text-rose-400 uppercase mb-1 flex items-center gap-2">
-                                    <XCircle className="w-3 h-3" />
-                                    Por qué fallaste:
-                                </h4>
-                                <p className="text-rose-800 dark:text-rose-200 text-sm italic">
-                                    "{question.refutations[String(selectedOption)]}"
-                                </p>
-                            </motion.div>
-                        )}
                     </motion.div>
                 )}
             </AnimatePresence>
