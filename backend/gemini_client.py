@@ -157,21 +157,34 @@ def validate_and_fix_question(question):
 
 
 def get_base_prompt(num_questions, difficulty):
+    # === REGLAS UNIVERSALES DE BLINDAJE ===
+    # 1. UNICIDAD: 1 Verdadera, 3 Falsas.
+    # 2. EXCLUSION: Prohibido "Todas/Ninguna es correcta", "A y B", etc.
+    # 3. OBJETIVIDAD: Distractores falsos por dato, no por interpretacion.
+    
     if difficulty.upper() == "EXPERTO":
         return f"""
     Actua como examinador TAI C1. Genera {num_questions} preguntas avanzadas.
-    REQUISITOS:
+    
+    BLINDAJE DE RESPUESTA UNICA Y EXCLUYENTE:
+    - REGLA DE ORO: Cada pregunta debe tener EXACTAMENTE una opcion verdadera y tres indiscutiblemente falsas.
+    - PROHIBIDO TERMINANTEMENTE: Opciones compuestas ("A y B son ciertas", "Todas las anteriores", "Ninguna es correcta").
+    
+    CONSTRUCCION DE DISTRACTORES (Falsas):
+    - Usa la tecnica "Alteracion de Atributo Unico": Cambia un dato objetivo (un plazo de 10 a 5 dias, un organo de Gobierno a Congreso, una condicion de 'preceptivo' a 'facultativo').
+    - NUNCA inventes normativa inexistente. Modifica sutilmente la real.
+    
+    REQUISITOS ADICIONALES:
     - Temas: Casos practicos, sintaxis y excepciones.
     - Estructura: 25% preguntas negativas (Cual es FALSA?).
-    - Distractores: Cambia cifras (10->15 dias), confunde leyes (39<->40), usa siglas parecidas (ENS<->ENI).
-    - Leyes 39/40: Si preguntas por plazos, busca el dato EXACTO en el texto. No inventes.
-    - Formato: JSON Array estricto.
-
+    - Leyes 39/40: Usa plazos y datos EXACTOS del texto.
+    
     PROCESO DE GENERACION (SELF-CORRECTION):
-    1. Piensa la pregunta y las 4 opciones.
-    2. REDACTA la explicacion comenzando OBLIGATORIAMENTE asi: "La respuesta correcta es [Letra] porque...".
-    3. Verifica: Si has escrito "La respuesta correcta es B", el campo "correct_index" DEBE ser 1.
-    4. Si es pregunta negativa ("Cual es falsa"), la "respuesta correcta" es la opcion Falsa.
+    1. Piensa la pregunta y la opcion VERDADERA.
+    2. Genera 3 opciones FALSAS modificando un atributo unico en cada una.
+    3. SELF-CHECK: "¿Existe alguna interpretacion rebuscada bajo la cual una opcion falsa pudiera considerarse verdadera?". Si es SI, reescribela.
+    4. REDACTA la explicacion comenzando OBLIGATORIAMENTE asi: "La respuesta correcta es [Letra] porque...".
+    5. Verifica: Si has escrito "La respuesta correcta es B", el campo "correct_index" DEBE ser 1.
 
     JSON SCHEMA:
     [
@@ -185,12 +198,17 @@ def get_base_prompt(num_questions, difficulty):
     ]
     """
     
+    # BASICO / INTERMEDIO
     return f"""
     Actua como un Preparador de Oposiciones. Genera un examen tipo test de {num_questions} preguntas.
     
     NIVEL: {difficulty.upper()} (Basico/Intermedio)
-    ESTILO: Preguntas claras. Explicacion didactica.
-    COBERTURA: Distribuye las preguntas uniformemente por todo el texto proporcionado.
+    
+    REGLAS DE ORO (BLINDAJE):
+    1. UNA sola opcion correcta. Tres opciones CLARAMENTE falsas.
+    2. PROHIBIDO: "Todas son correctas", "Ninguna es correcta", "A y C son correctas".
+    3. DISTRACTORES: Cambia un dato concreto (fecha, numero, palabra clave) para hacer la opcion falsa.
+    
     PLAZOS Y LEYES: Se preciso con los dias y los silencios administrativos.
     
     CRITERIO OBLIGATORIO:
@@ -198,8 +216,9 @@ def get_base_prompt(num_questions, difficulty):
     
     PROCESO INTERNO:
     1. Determina la respuesta correcta.
-    2. Escribe la explicacion: "La respuesta correcta es [Letra] porque..."
-    3. Asigna correct_index basandote en esa letra (0=A, 1=B...).
+    2. Asegurate de que las otras 3 son falsas sin ambiguedad.
+    3. Escribe la explicacion: "La respuesta correcta es [Letra] porque..."
+    4. Asigna correct_index basandote en esa letra (0=A, 1=B...).
     
     Formato JSON:
     [
