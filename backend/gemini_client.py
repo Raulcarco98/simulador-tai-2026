@@ -233,11 +233,12 @@ def get_base_prompt(num_questions, difficulty):
     """
 
 
-# === STREAMING GENERATOR (Single Request Strategy) ===
+# === STREAMING GENERATOR (Unified with Segmentation) ===
 async def generate_exam_streaming(num_questions: int, context_text: str = None, topic: str = None, difficulty: str = "Intermedio"):
     """
-    Async generator: single unified request for all questions.
-    Yields log events and the full question list.
+    Async generator. 
+    Expert Mode: Splits generation into 2 blocks (Half 1 / Half 2) to ensure full context coverage.
+    Other Modes: Single unified request.
     """
     
     if not clients:
@@ -254,115 +255,168 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
         context_text = f"Tema solicitado: {topic}"
         yield {"type": "log", "msg": f"[INICIO] Tema: {topic}"}
     
-    # Preparar Prompt y Contexto
-    prompt = get_base_prompt(num_questions, difficulty)
-    if context_text:
-        clean_len = len(_clean_text(context_text))
-        yield {"type": "log", "msg": f"[INICIO] Contexto: {clean_len} caracteres"}
-        cleaned_context = _clean_text(context_text[:30000])
-        prompt += f"\n\nCONTENIDO PROPORCIONADO:\n{cleaned_context}"
+    # === SEGMENTATION STRATEGY ===
+    generation_tasks = []
+    
+    if difficulty.upper() == "EXPERTO" and context_text and len(context_text) > 1000:
+        # Split context in two halves
+        clean_full = _clean_text(context_text)
+        mid_point = len(clean_full) // 2
+        # Find nearest space to avoid cutting words
+        split_idx = clean_full.find(' ', mid_point)
+        if split_idx == -1: split_idx = mid_point
+        
+        part1 = clean_full[:split_idx]
+        part2 = clean_full[split_idx:]
+        
+        q_count1 = num_questions // 2
+        q_count2 = num_questions - q_count1
+        
+        generation_tasks.append({
+            "context": part1, 
+            "count": q_count1, 
+            "desc": f"1-{q_count1} (Primera mitad del contexto)"
+        })
+        generation_tasks.append({
+            "context": part2, 
+            "count": q_count2, 
+            "desc": f"{q_count1+1}-{num_questions} (Segunda mitad del contexto)"
+        })
+        yield {"type": "log", "msg": f"[ESTRATEGIA] Segmentacion activada: 2 bloques de contexto para cobertura total."}
+    else:
+        # Standard single block
+        clean_ctx = _clean_text(context_text) if context_text else ""
+        generation_tasks.append({
+            "context": clean_ctx, 
+            "count": num_questions, 
+            "desc": "completo"
+        })
 
-    yield {"type": "log", "msg": f"\n[GENERANDO] Peticion unica de {num_questions} preguntas..."}
-
-    # === CORE GENERATION LOOP INLINED ===
-    raw_questions = []
+    all_raw_questions = []
     max_retries = 6 
 
-    for attempt in range(max_retries):
-        try:
-            active_client, project_label = _get_client()
-            
-            # === MODEL FALLBACK STRATEGY ===
-            # Intentos 0-1: gemini-2.0-flash
-            # Intentos 2-3: gemini-2.0-flash-lite (Quota bucket distinta)
-            # Intentos 4+:  gemini-exp-1206 (Experimental/Thinking - Respaldo final)
-            current_model = "gemini-2.0-flash"
-            if attempt >= 2:
-                current_model = "gemini-2.0-flash-lite"
-            if attempt >= 4:
-                current_model = "gemini-exp-1206"
-
-            if attempt == 2 and current_model == "gemini-2.0-flash-lite":
-                 yield {"type": "log", "msg": f"[ALERTA] Cuota de Gemini 2.0 Flash agotada. Probando con Gemini 2.0 Flash-Lite..."}
-            elif attempt == 4:
-                 yield {"type": "log", "msg": f"[ALERTA] Cuota de Flash-Lite agotada. Probando con Gemini Exp 1206..."}
-            
-            yield {"type": "log", "msg": f"[{project_label}] Llamando a {current_model} (intento {attempt+1}/{max_retries})..."}
-            _safe_print(f"[{project_label}] Request start {current_model}...")
-            
-            response = await active_client.aio.models.generate_content(
-                model=current_model,
-                contents=prompt,
-                config=generation_config,
-            )
-            
-            raw_text = response.text
-            yield {"type": "log", "msg": f"[{project_label}] Respuesta recibida. Parseando JSON..."}
-            
-            # Robust JSON parsing
-            try:
-                raw_questions = json.loads(raw_text)
-                yield {"type": "log", "msg": f"[{project_label}] JSON OK: {len(raw_questions)} preguntas."}
-                break # Success!
-            except json.JSONDecodeError:
-                yield {"type": "log", "msg": f"[{project_label}] JSON directo fallo. Limpiando..."}
-                cleaned_json = _clean_json_response(raw_text)
-                try:
-                    raw_questions = json.loads(cleaned_json)
-                    yield {"type": "log", "msg": f"[{project_label}] JSON limpiado: {len(raw_questions)} preguntas recuperadas."}
-                    break # Success!
-                except json.JSONDecodeError as je:
-                    yield {"type": "log", "msg": f"[{project_label}] JSON irrecuperable: {je}. Raw: {raw_text[:150]}..."}
-                    # Non-retriable error unless we want to retry generation? 
-                    # Usually bad JSON is result of bad generation, so maybe retry?
-                    # For now, treat as failure of this attempt.
+    # === EXECUTION LOOP ===
+    for task_idx, task in enumerate(generation_tasks):
+        if len(generation_tasks) > 1:
+            yield {"type": "log", "msg": f"\n[EXPERTO] Generando preguntas {task['desc']}..."}
+        else:
+            yield {"type": "log", "msg": f"\n[GENERANDO] Peticion unica de {num_questions} preguntas..."}
         
-        except genai_errors.ClientError as e:
-            error_str = str(e)
-            is_rate_limit = "429" in error_str or "RESOURCE_EXHAUSTED" in error_str
+        # Build Prompt for this block
+        current_prompt = get_base_prompt(task["count"], difficulty)
+        if task["context"]:
+            # Limit context length per block if needed, though splitting helps handling limits naturally
+            # Using 25000 chars roughly per block if full doc is huge
+            block_ctx = task["context"][:30000] 
+            current_prompt += f"\n\nCONTENIDO PARCIAL PROPORCIONADO:\n{block_ctx}"
+        
+        # Retry Loop for this Block
+        block_success = False
+        
+        for attempt in range(max_retries):
+            try:
+                active_client, project_label = _get_client()
+                
+                # === MODEL FALLBACK STRATEGY ===
+                # Intentos 0-1: gemini-2.0-flash
+                # Intentos 2-3: gemini-2.0-flash-lite (Quota bucket distinta)
+                # Intentos 4+:  gemini-exp-1206 (Experimental/Thinking - Respaldo final)
+                current_model = "gemini-2.0-flash"
+                if attempt >= 2:
+                    current_model = "gemini-2.0-flash-lite"
+                if attempt >= 4:
+                    current_model = "gemini-exp-1206"
+
+                if attempt == 2 and current_model == "gemini-2.0-flash-lite":
+                     yield {"type": "log", "msg": f"[ALERTA] Cuota de Gemini 2.0 Flash agotada. Probando con Gemini 2.0 Flash-Lite..."}
+                elif attempt == 4:
+                     yield {"type": "log", "msg": f"[ALERTA] Cuota de Flash-Lite agotada. Probando con Gemini Exp 1206..."}
+                
+                yield {"type": "log", "msg": f"[{project_label}] Llamando a {current_model} (intento {attempt+1}/{max_retries})..."}
+                _safe_print(f"[{project_label}] Request start {current_model}...")
+                
+                response = await active_client.aio.models.generate_content(
+                    model=current_model,
+                    contents=current_prompt,
+                    config=generation_config,
+                )
+                
+                raw_text = response.text
+                yield {"type": "log", "msg": f"[{project_label}] Respuesta recibida. Parseando JSON..."}
+                
+                # Robust JSON parsing
+                current_questions = []
+                try:
+                    current_questions = json.loads(raw_text)
+                    yield {"type": "log", "msg": f"[{project_label}] JSON OK: {len(current_questions)} preguntas."}
+                    all_raw_questions.extend(current_questions)
+                    block_success = True
+                    break # Block Success!
+                except json.JSONDecodeError:
+                    yield {"type": "log", "msg": f"[{project_label}] JSON directo fallo. Limpiando..."}
+                    cleaned_json = _clean_json_response(raw_text)
+                    try:
+                        current_questions = json.loads(cleaned_json)
+                        yield {"type": "log", "msg": f"[{project_label}] JSON limpiado: {len(current_questions)} preguntas recuperadas."}
+                        all_raw_questions.extend(current_questions)
+                        block_success = True
+                        break # Block Success!
+                    except json.JSONDecodeError as je:
+                        yield {"type": "log", "msg": f"[{project_label}] JSON irrecuperable: {je}. Raw: {raw_text[:150]}..."}
             
-            if is_rate_limit:
-                old_label, new_label = _rotate_project()
-                if old_label:
-                    # Progressive backoff: 5s, 10s, then 20s cap
-                    backoff_times = [5, 10]
-                    wait_time = backoff_times[attempt] if attempt < len(backoff_times) else 20
-                    
-                    yield {"type": "log", "msg": f"[DEBUG] Limite alcanzado. Reintentando en {wait_time}s con el siguiente proyecto..."}
-                    _safe_print(f"[DEBUG] {wait_time}s sleep triggered...")
+            except genai_errors.ClientError as e:
+                error_str = str(e)
+                is_rate_limit = "429" in error_str or "RESOURCE_EXHAUSTED" in error_str
+                
+                if is_rate_limit:
+                    old_label, new_label = _rotate_project()
+                    if old_label:
+                        # Progressive backoff: 5s, 10s, then 20s cap
+                        backoff_times = [5, 10]
+                        wait_time = backoff_times[attempt] if attempt < len(backoff_times) else 20
+                        
+                        yield {"type": "log", "msg": f"[DEBUG] Limite alcanzado. Reintentando en {wait_time}s con el siguiente proyecto..."}
+                        _safe_print(f"[DEBUG] {wait_time}s sleep triggered...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    elif attempt < max_retries - 1:
+                        wait_time = 10 * (2 ** min(attempt, 3))
+                        yield {"type": "log", "msg": f"[DEBUG] Todos los proyectos agotados. Esperando {wait_time}s..."}
+                        await asyncio.sleep(wait_time)
+                        continue
+                
+                yield {"type": "log", "msg": f"[ERROR] ClientError: {error_str[:200]}"}
+                if attempt < max_retries - 1:
+                     await asyncio.sleep(5)
+                     continue
+                        
+            except Exception as e:
+                error_str = str(e)
+                yield {"type": "log", "msg": f"[ERROR] {type(e).__name__}: {error_str[:200]}"}
+                
+                if attempt < max_retries - 1:
+                    wait_time = 5 * (2 ** min(attempt, 3))
+                    yield {"type": "log", "msg": f"[DEBUG] Reintentando en {wait_time}s..."}
                     await asyncio.sleep(wait_time)
                     continue
-                elif attempt < max_retries - 1:
-                    wait_time = 10 * (2 ** min(attempt, 3))
-                    yield {"type": "log", "msg": f"[DEBUG] Todos los proyectos agotados. Esperando {wait_time}s..."}
-                    await asyncio.sleep(wait_time)
-                    continue
-            
-            yield {"type": "log", "msg": f"[ERROR] ClientError: {error_str[:200]}"}
-            if attempt < max_retries - 1:
-                 await asyncio.sleep(5) # Default small wait for non-429 errors
-                 continue
-                    
-        except Exception as e:
-            error_str = str(e)
-            yield {"type": "log", "msg": f"[ERROR] {type(e).__name__}: {error_str[:200]}"}
-            
-            if attempt < max_retries - 1:
-                wait_time = 5 * (2 ** min(attempt, 3))
-                yield {"type": "log", "msg": f"[DEBUG] Reintentando en {wait_time}s..."}
-                await asyncio.sleep(wait_time)
-                continue
-    
+        
+        if not block_success:
+            yield {"type": "log", "msg": f"[ERROR] Fallo critico en bloque {task_idx+1}. Se devolveran resultados parciales."}
+            # Decide whether to stop or continue to next block. 
+            # If prompt integrity is huge, maybe continue? 
+            # But likely we should try next block to salvage something.
+            continue
+
     # === VALIDATION & OUTPUT ===
-    if isinstance(raw_questions, list) and raw_questions:
+    if all_raw_questions:
         # === BLINDAJE FINAL ===
-        yield {"type": "log", "msg": f"\n[BLINDAJE] Validando coherencia de {len(raw_questions)} preguntas..."}
+        yield {"type": "log", "msg": f"\n[BLINDAJE] Validando coherencia de {len(all_raw_questions)} preguntas totales..."}
         
         validated = []
         fixes_count = 0
-        for i, q in enumerate(raw_questions):
+        for i, q in enumerate(all_raw_questions):
             if q:
-                q["id"] = i + 1
+                q["id"] = i + 1 # Renumber sequentially
                 old_idx = q.get("correct_index")
                 fixed_q = validate_and_fix_question(q)
                 if fixed_q.get("correct_index") != old_idx:
