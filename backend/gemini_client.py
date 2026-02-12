@@ -273,13 +273,19 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
             active_client, project_label = _get_client()
             
             # === MODEL FALLBACK STRATEGY ===
-            # Intentos 0-1: gemini-2.0-flash (Alta calidad, rate limits agresivos)
-            # Intentos 2+:  gemini-1.5-flash (Fallback robusto para evitar colas)
+            # Intentos 0-1: gemini-2.0-flash
+            # Intentos 2-3: gemini-1.5-flash
+            # Intentos 4+:  gemini-1.5-pro (Ultimate fallback)
             current_model = "gemini-2.0-flash"
             if attempt >= 2:
                 current_model = "gemini-1.5-flash"
-                if attempt == 2:
-                     yield {"type": "log", "msg": f"[ALERTA] Cuota de Gemini 2.0 agotada. Probando con Gemini 1.5 para evitar esperas..."}
+            if attempt >= 4:
+                current_model = "gemini-1.5-pro"
+
+            if attempt == 2 and current_model == "gemini-1.5-flash":
+                 yield {"type": "log", "msg": f"[ALERTA] Cuota de Gemini 2.0 agotada. Probando con Gemini 1.5 Flash..."}
+            elif attempt == 4:
+                 yield {"type": "log", "msg": f"[ALERTA] Cuota de Gemini 1.5 Flash agotada. Probando con Gemini 1.5 Pro..."}
             
             yield {"type": "log", "msg": f"[{project_label}] Llamando a {current_model} (intento {attempt+1}/{max_retries})..."}
             _safe_print(f"[{project_label}] Request start {current_model}...")
@@ -333,7 +339,9 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
                     continue
             
             yield {"type": "log", "msg": f"[ERROR] ClientError: {error_str[:200]}"}
-            # Continue to next attempt if possible
+            if attempt < max_retries - 1:
+                 await asyncio.sleep(5) # Default small wait for non-429 errors
+                 continue
                     
         except Exception as e:
             error_str = str(e)
