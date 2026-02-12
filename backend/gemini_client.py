@@ -294,15 +294,22 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
 
     all_raw_questions = []
     max_retries = 6 
+    
+    # === SESSION MEMORY ===
+    # Tracks the best working model tier index (0=2.0, 2=Lite, 4=Exp)
+    # If Block 1 fails on 2.0 and succeeds on Lite (attempt 2), Block 2 starts at attempt 2.
+    current_tier_start = 0 
 
     # === EXECUTION LOOP ===
     for task_idx, task in enumerate(generation_tasks):
         if len(generation_tasks) > 1:
             yield {"type": "log", "msg": f"\n[EXPERTO] Generando preguntas {task['desc']}..."}
+            if current_tier_start > 0:
+                 model_name = "gemini-2.0-flash-lite" if current_tier_start == 2 else "gemini-exp-1206"
+                 yield {"type": "log", "msg": f"[OPTIMIZACION] Saltando modelos agotados. Iniciando con {model_name} (Tier {current_tier_start})..."}
         else:
             yield {"type": "log", "msg": f"\n[GENERANDO] Peticion unica de {num_questions} preguntas..."}
         
-        # Build Prompt for this block
         # Build Prompt for this block
         current_prompt = get_base_prompt(task["count"], difficulty)
         
@@ -328,7 +335,8 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
         # Retry Loop for this Block
         block_success = False
         
-        for attempt in range(max_retries):
+        # Start attempts from the memorized tier
+        for attempt in range(current_tier_start, max_retries):
             try:
                 active_client, project_label = _get_client()
                 
@@ -365,6 +373,16 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
                     current_questions = json.loads(raw_text)
                     yield {"type": "log", "msg": f"[{project_label}] JSON OK: {len(current_questions)} preguntas."}
                     all_raw_questions.extend(current_questions)
+                    
+                    # === UPDATE SESSION MEMORY ===
+                    # If we succeeded at a higher tier (e.g. attempt 2 or 3 -> tier 2), remember it for next block.
+                    # Round down to even number (0, 2, 4) to ensure we start at the beginning of the tier.
+                    new_tier = (attempt // 2) * 2
+                    if new_tier > current_tier_start:
+                        current_tier_start = new_tier
+                        # Only log if it's the first time we realize this
+                        # yield {"type": "log", "msg": f"[MEMORIA] Tier {current_tier_start} guardado para siguientes bloques."}
+                    
                     block_success = True
                     break # Block Success!
                 except json.JSONDecodeError:
@@ -374,6 +392,12 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
                         current_questions = json.loads(cleaned_json)
                         yield {"type": "log", "msg": f"[{project_label}] JSON limpiado: {len(current_questions)} preguntas recuperadas."}
                         all_raw_questions.extend(current_questions)
+                        
+                        # === UPDATE SESSION MEMORY ===
+                        new_tier = (attempt // 2) * 2
+                        if new_tier > current_tier_start:
+                            current_tier_start = new_tier
+
                         block_success = True
                         break # Block Success!
                     except json.JSONDecodeError as je:
