@@ -157,34 +157,34 @@ def validate_and_fix_question(question):
 
 
 def get_base_prompt(num_questions, difficulty):
-    # === REGLAS UNIVERSALES DE BLINDAJE ===
+    # === REGLAS UNIVERSALES DE BLINDAJE (OPTIMIZADO) ===
     # 1. UNICIDAD: 1 Verdadera, 3 Falsas.
-    # 2. EXCLUSION: Prohibido "Todas/Ninguna es correcta", "A y B", etc.
-    # 3. OBJETIVIDAD: Distractores falsos por dato, no por interpretacion.
+    # 2. EXCLUSION: Prohibido "Todas/Ninguna", "A y B".
+    # 3. OBJETIVIDAD: Falsas por dato, no interpretacion.
     
     if difficulty.upper() == "EXPERTO":
         return f"""
-    Actua como examinador TAI C1. Genera {num_questions} preguntas avanzadas.
+    Rol: Examinador TAI C1. Genera {num_questions} preguntas.
     
-    BLINDAJE DE RESPUESTA UNICA Y EXCLUYENTE:
-    - REGLA DE ORO: Cada pregunta debe tener EXACTAMENTE una opcion verdadera y tres indiscutiblemente falsas.
-    - PROHIBIDO TERMINANTEMENTE: Opciones compuestas ("A y B son ciertas", "Todas las anteriores", "Ninguna es correcta").
+    BLINDAJE RESPUESTA UNICA:
+    - REGLA: 1 Verdadera, 3 Falsas indiscutibles.
+    - PROHIBIDO: Compuestas ("Todas", "Ninguna", "A y B").
     
-    CONSTRUCCION DE DISTRACTORES (Falsas):
-    - Usa la tecnica "Alteracion de Atributo Unico": Cambia un dato objetivo (un plazo de 10 a 5 dias, un organo de Gobierno a Congreso, una condicion de 'preceptivo' a 'facultativo').
-    - NUNCA inventes normativa inexistente. Modifica sutilmente la real.
+    DISTRACTORES (Falsas):
+    - Altera 1 dato objetivo (plazo, organo, condicion).
+    - No inventes normativa. Modifica la real.
     
-    REQUISITOS ADICIONALES:
-    - Temas: Casos practicos, sintaxis y excepciones.
-    - Estructura: 25% preguntas negativas (Cual es FALSA?).
-    - Leyes 39/40: Usa plazos y datos EXACTOS del texto.
+    REQUISITOS:
+    - Temas: Practicos, sintaxis, excepciones.
+    - 25% Negativas.
+    - Leyes 39/40: Plazos y datos EXACTOS.
     
-    PROCESO DE GENERACION (SELF-CORRECTION):
-    1. Piensa la pregunta y la opcion VERDADERA.
-    2. Genera 3 opciones FALSAS modificando un atributo unico en cada una.
-    3. SELF-CHECK: "¿Existe alguna interpretacion rebuscada bajo la cual una opcion falsa pudiera considerarse verdadera?". Si es SI, reescribela.
-    4. REDACTA la explicacion comenzando OBLIGATORIAMENTE asi: "La respuesta correcta es [Letra] porque...".
-    5. Verifica: Si has escrito "La respuesta correcta es B", el campo "correct_index" DEBE ser 1.
+    PROCESO (SELF-CORRECTION):
+    1. Piensa pregunta y Verdadera.
+    2. Genera 3 Falsas (dato alterado).
+    3. SELF-CHECK: ¿Alguna falsa es defendible? Si -> Reescribela.
+    4. REDACTA explicacion: "La respuesta correcta es [Letra] porque...".
+    5. Verifica: Si dices "Es la B", correct_index=1.
 
     JSON SCHEMA:
     [
@@ -192,33 +192,33 @@ def get_base_prompt(num_questions, difficulty):
             "id": 1,
             "question": "Texto",
             "options": ["A", "B", "C", "D"],
-            "correct_index": 0, <--- DEBE COINCIDIR CON LA LETRA DE LA EXPLICACION
-            "explanation": "La respuesta correcta es A porque [Explicacion breve]..."
+            "correct_index": 0,
+            "explanation": "La respuesta correcta es A porque [Breve]..."
         }}
     ]
     """
     
-    # BASICO / INTERMEDIO
+    # BASICO / INTERMEDIO (OPTIMIZADO)
     return f"""
-    Actua como un Preparador de Oposiciones. Genera un examen tipo test de {num_questions} preguntas.
+    Rol: Preparador Oposiciones. Test de {num_questions} preguntas.
     
-    NIVEL: {difficulty.upper()} (Basico/Intermedio)
+    NIVEL: {difficulty.upper()}
     
-    REGLAS DE ORO (BLINDAJE):
-    1. UNA sola opcion correcta. Tres opciones CLARAMENTE falsas.
-    2. PROHIBIDO: "Todas son correctas", "Ninguna es correcta", "A y C son correctas".
-    3. DISTRACTORES: Cambia un dato concreto (fecha, numero, palabra clave) para hacer la opcion falsa.
+    REGLAS (BLINDAJE):
+    1. 1 Correcta, 3 Falsas claras.
+    2. PROHIBIDO: "Todas/Ninguna correctas", "A y C".
+    3. FALSAS: Cambia 1 dato concreto.
     
-    PLAZOS Y LEYES: Se preciso con los dias y los silencios administrativos.
+    PLAZOS: Exactitud total en dias/silencios.
     
     CRITERIO OBLIGATORIO:
-    - "explanation" DEBE empezar con la frase exacta: "La respuesta correcta es [Letra]...".
+    - "explanation" DEBE empezar: "La respuesta correcta es [Letra]...".
     
-    PROCESO INTERNO:
-    1. Determina la respuesta correcta.
-    2. Asegurate de que las otras 3 son falsas sin ambiguedad.
-    3. Escribe la explicacion: "La respuesta correcta es [Letra] porque..."
-    4. Asigna correct_index basandote en esa letra (0=A, 1=B...).
+    PROCESO:
+    1. Define Correcta.
+    2. Asegura 3 Falsas sin ambiguedad.
+    3. Explicacion: "La respuesta correcta es [Letra]..."
+    4. Asigna correct_index (0=A...).
     
     Formato JSON:
     [
@@ -271,11 +271,21 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
     for attempt in range(max_retries):
         try:
             active_client, project_label = _get_client()
-            yield {"type": "log", "msg": f"[{project_label}] Llamando a {MODEL_NAME} (intento {attempt+1}/{max_retries})..."}
-            _safe_print(f"[{project_label}] Request start...")
+            
+            # === MODEL FALLBACK STRATEGY ===
+            # Intentos 0-1: gemini-2.0-flash (Alta calidad, rate limits agresivos)
+            # Intentos 2+:  gemini-1.5-flash (Fallback robusto para evitar colas)
+            current_model = "gemini-2.0-flash"
+            if attempt >= 2:
+                current_model = "gemini-1.5-flash"
+                if attempt == 2:
+                     yield {"type": "log", "msg": f"[ALERTA] Cuota de Gemini 2.0 agotada. Probando con Gemini 1.5 para evitar esperas..."}
+            
+            yield {"type": "log", "msg": f"[{project_label}] Llamando a {current_model} (intento {attempt+1}/{max_retries})..."}
+            _safe_print(f"[{project_label}] Request start {current_model}...")
             
             response = await active_client.aio.models.generate_content(
-                model=MODEL_NAME,
+                model=current_model,
                 contents=prompt,
                 config=generation_config,
             )
