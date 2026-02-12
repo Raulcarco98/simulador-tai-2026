@@ -303,12 +303,26 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
             yield {"type": "log", "msg": f"\n[GENERANDO] Peticion unica de {num_questions} preguntas..."}
         
         # Build Prompt for this block
+        # Build Prompt for this block
         current_prompt = get_base_prompt(task["count"], difficulty)
+        
+        # Inject Topic (Critical for context)
+        if topic:
+             current_prompt += f"\n\nCONTEXTO TEMATICO: {topic}"
+
         if task["context"]:
             # Limit context length per block if needed, though splitting helps handling limits naturally
             # Using 25000 chars roughly per block if full doc is huge
             block_ctx = task["context"][:30000] 
-            current_prompt += f"\n\nCONTENIDO PARCIAL PROPORCIONADO:\n{block_ctx}"
+            current_prompt += f"\n\nDOCUMENTO FUENTE PARCIAL:\n{block_ctx}"
+            
+            # STRICT CONTEXT INSTRUCTION
+            current_prompt += "\n\n⚠️ INSTRUCCION CRITICA DE JEFE DE TRIBUNAL:"
+            current_prompt += "\n1. Genera las preguntas BASANDOTE UNICAMENTE EN EL TEXTO DE ARRIBA (DOCUMENTO FUENTE PARCIAL)."
+            current_prompt += "\n2. Si el texto es un fragmento de una ley, NO preguntes sobre articulos que no aparezcan aqui."
+            current_prompt += "\n3. Si el texto termina abruptamente, ignora el corte y pregunta sobre lo que SI es legible."
+            
+            yield {"type": "log", "msg": f"[DEBUG] Bloque {task_idx+1}: Contexto de {len(block_ctx)} caracteres inyectado."}
         
         # Retry Loop for this Block
         block_success = False
