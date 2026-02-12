@@ -314,13 +314,14 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
             # Limit context length per block if needed, though splitting helps handling limits naturally
             # Using 25000 chars roughly per block if full doc is huge
             block_ctx = task["context"][:30000] 
-            current_prompt += f"\n\nDOCUMENTO FUENTE PARCIAL:\n{block_ctx}"
+            # Use generic header to avoid confusing the model into writing "Según el fragmento..."
+            current_prompt += f"\n\nDOCUMENTO NORMATIVO DE REFERENCIA:\n{block_ctx}"
             
-            # STRICT CONTEXT INSTRUCTION
+            # STRICT CONTEXT INSTRUCTION (REFINED)
             current_prompt += "\n\n⚠️ INSTRUCCION CRITICA DE JEFE DE TRIBUNAL:"
-            current_prompt += "\n1. Genera las preguntas BASANDOTE UNICAMENTE EN EL TEXTO DE ARRIBA (DOCUMENTO FUENTE PARCIAL)."
-            current_prompt += "\n2. Si el texto es un fragmento de una ley, NO preguntes sobre articulos que no aparezcan aqui."
-            current_prompt += "\n3. Si el texto termina abruptamente, ignora el corte y pregunta sobre lo que SI es legible."
+            current_prompt += "\n1. Genera las preguntas BASANDOTE UNICAMENTE EN EL TEXTO DE ARRIBA."
+            current_prompt += "\n2. IMPORTANTE: NO menciones 'el texto', 'el fragmento', 'la fuente' o 'el documento' en los enunciados. Formula la pregunta como si fuera un examen oficial (ej: 'Segun la Ley 39/2015...')."
+            current_prompt += "\n3. Si el texto es un fragmento, ignora el corte y pregunta solo sobre lo visible, PERO SIN MENCIONAR QUE ES UN FRAGMENTO."
             
             yield {"type": "log", "msg": f"[DEBUG] Bloque {task_idx+1}: Contexto de {len(block_ctx)} caracteres inyectado."}
         
