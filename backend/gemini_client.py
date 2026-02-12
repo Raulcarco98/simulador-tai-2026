@@ -274,18 +274,18 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
             
             # === MODEL FALLBACK STRATEGY ===
             # Intentos 0-1: gemini-2.0-flash
-            # Intentos 2-3: gemini-1.5-flash
-            # Intentos 4+:  gemini-1.5-pro (Ultimate fallback)
+            # Intentos 2-3: gemini-2.0-flash-lite (Quota bucket distinta)
+            # Intentos 4+:  gemini-exp-1206 (Experimental/Thinking - Respaldo final)
             current_model = "gemini-2.0-flash"
             if attempt >= 2:
-                current_model = "gemini-1.5-flash"
+                current_model = "gemini-2.0-flash-lite"
             if attempt >= 4:
-                current_model = "gemini-1.5-pro"
+                current_model = "gemini-exp-1206"
 
-            if attempt == 2 and current_model == "gemini-1.5-flash":
-                 yield {"type": "log", "msg": f"[ALERTA] Cuota de Gemini 2.0 agotada. Probando con Gemini 1.5 Flash..."}
+            if attempt == 2 and current_model == "gemini-2.0-flash-lite":
+                 yield {"type": "log", "msg": f"[ALERTA] Cuota de Gemini 2.0 Flash agotada. Probando con Gemini 2.0 Flash-Lite..."}
             elif attempt == 4:
-                 yield {"type": "log", "msg": f"[ALERTA] Cuota de Gemini 1.5 Flash agotada. Probando con Gemini 1.5 Pro..."}
+                 yield {"type": "log", "msg": f"[ALERTA] Cuota de Flash-Lite agotada. Probando con Gemini Exp 1206..."}
             
             yield {"type": "log", "msg": f"[{project_label}] Llamando a {current_model} (intento {attempt+1}/{max_retries})..."}
             _safe_print(f"[{project_label}] Request start {current_model}...")
