@@ -322,39 +322,13 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
     # === SEGMENTATION STRATEGY ===
     generation_tasks = []
     
-    if difficulty.upper() == "EXPERTO" and context_text and len(context_text) > 1000:
-        # Split context in two halves
-        clean_full = _clean_text(context_text)
-        mid_point = len(clean_full) // 2
-        # Find nearest space to avoid cutting words
-        split_idx = clean_full.find(' ', mid_point)
-        if split_idx == -1: split_idx = mid_point
-        
-        part1 = clean_full[:split_idx]
-        part2 = clean_full[split_idx:]
-        
-        q_count1 = num_questions // 2
-        q_count2 = num_questions - q_count1
-        
-        generation_tasks.append({
-            "context": part1, 
-            "count": q_count1, 
-            "desc": f"1-{q_count1} (Primera mitad del contexto)"
-        })
-        generation_tasks.append({
-            "context": part2, 
-            "count": q_count2, 
-            "desc": f"{q_count1+1}-{num_questions} (Segunda mitad del contexto)"
-        })
-        yield {"type": "log", "msg": f"[ESTRATEGIA] Segmentacion activada: 2 bloques de contexto para cobertura total."}
-    else:
-        # Standard single block
-        clean_ctx = _clean_text(context_text) if context_text else ""
-        generation_tasks.append({
-            "context": clean_ctx, 
-            "count": num_questions, 
-            "desc": "completo"
-        })
+    # Standard single block for ALL modes (Expert splitting removed)
+    clean_ctx = _clean_text(context_text) if context_text else ""
+    generation_tasks.append({
+        "context": clean_ctx, 
+        "count": num_questions, 
+        "desc": "completo"
+    })
 
     all_raw_questions = []
     max_retries = 6 
