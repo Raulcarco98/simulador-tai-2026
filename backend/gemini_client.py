@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import re
+import random
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types, errors as genai_errors
@@ -153,6 +154,69 @@ def validate_and_fix_question(question):
     except Exception as e:
         _safe_print(f"[BLINDAJE] Error critico en validacion: {e}")
     
+    return question
+
+
+
+def shuffle_options(question):
+    """
+    Aleatoriza el orden de las opciones para evitar el sesgo de posicion (siempre A).
+    Actualiza correct_index y la explicacion para reflejar la nueva letra.
+    """
+    try:
+        options = question.get("options", [])
+        current_idx = question.get("correct_index", 0)
+        
+        if not options or len(options) < 2:
+            return question
+            
+        # 1. Identificar la respuesta correcta actual (texto)
+        if current_idx < 0 or current_idx >= len(options):
+            return question # Indice invalido, no tocar
+            
+        correct_text = options[current_idx]
+        
+        # 2. Barajar opciones
+        # Creamos pares (texto, es_correcta)
+        items = [{"text": opt, "is_correct": (i == current_idx)} for i, opt in enumerate(options)]
+        random.shuffle(items)
+        
+        # 3. Reconstruir
+        new_options = [item["text"] for item in items]
+        new_idx = next(i for i, item in enumerate(items) if item["is_correct"])
+        
+        question["options"] = new_options
+        question["correct_index"] = new_idx
+        
+        # 4. Actualizar Explicacion (Reflejar cambio de letra)
+        # El modelo suele escribir "La respuesta correcta es A...".
+        # Debemos cambiar esa A por la nueva letra (B, C, D...).
+        old_letter = chr(65 + current_idx)
+        new_letter = chr(65 + new_idx)
+        
+        if old_letter != new_letter:
+            explanation = question.get("explanation", "")
+            
+            # Regex para patrones comunes de explicacion
+            patterns = [
+                # "La respuesta correcta es (la) X"
+                (r"(respuesta\s+correcta\s+(?:es|sea)\s+(?:la\s+)?){}\b".format(old_letter), r"\g<1>" + new_letter),
+                # "Correcta: X"
+                (r"(correcta:\s*\[?){}\]?".format(old_letter), r"\g<1>" + new_letter),
+                # "Solución: X"
+                (r"(soluci[oó]n:\s*){}\b".format(old_letter), r"\g<1>" + new_letter),
+                # Inicio con "X)" o "X."
+                (r"^{}([.\)])".format(old_letter), new_letter + r"\1")
+            ]
+            
+            for pat, repl in patterns:
+                explanation = re.sub(pat, repl, explanation, flags=re.IGNORECASE)
+                
+            question["explanation"] = explanation
+            
+    except Exception as e:
+        _safe_print(f"[SHUFFLE] Error barajando pregunta {question.get('id')}: {e}")
+        
     return question
 
 
@@ -460,7 +524,10 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
                 fixed_q = validate_and_fix_question(q)
                 if fixed_q.get("correct_index") != old_idx:
                     fixes_count += 1
-                validated.append(fixed_q)
+                
+                # === SHUFFLE PARA EVITAR SESGO ===
+                shuffled_q = shuffle_options(fixed_q)
+                validated.append(shuffled_q)
         
         if fixes_count > 0:
             yield {"type": "log", "msg": f"[BLINDAJE] {fixes_count} correcciones de correct_index aplicadas."}
