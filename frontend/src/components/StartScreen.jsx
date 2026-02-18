@@ -9,18 +9,18 @@ export default function StartScreen({ onStart }) {
     const [file, setFile] = useState(null);
     const [topic, setTopic] = useState("");
     const [difficulty, setDifficulty] = useState("Intermedio");
-    const [isRandomMode, setIsRandomMode] = useState(false);
+    const [examMode, setExamMode] = useState('manual'); // 'manual' | 'random_1' | 'simulacro_3'
     const [folderPath, setFolderPath] = useState("");
 
     const handleStart = () => {
         onStart({
             numQuestions,
             minutes,
-            file: isRandomMode ? null : file,
-            topic: isRandomMode ? "" : topic,
+            file: examMode === 'manual' ? file : null,
+            topic: examMode === 'manual' ? topic : "",
             difficulty,
-            mode: isRandomMode ? 'random' : 'normal',
-            directory_path: isRandomMode ? folderPath : null
+            mode: examMode,
+            directory_path: (examMode === 'random_1' || examMode === 'simulacro_3') ? folderPath : null
         });
     };
 
@@ -68,21 +68,25 @@ export default function StartScreen({ onStart }) {
 
                 <div className="space-y-8">
 
-                    {/* Mode Toggle */}
-                    <div className="flex items-center justify-between bg-slate-100 dark:bg-slate-800/50 p-1 rounded-xl">
-                        <button
-                            onClick={() => setIsRandomMode(false)}
-                            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${!isRandomMode ? 'bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-blue-400' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                        >
-                            Modo Normal
-                        </button>
-                        <button
-                            onClick={() => setIsRandomMode(true)}
-                            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${isRandomMode ? 'bg-white dark:bg-slate-700 shadow text-emerald-600 dark:text-emerald-400' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                        >
-                            <Dice5 className="w-4 h-4" />
-                            Modo Ruleta
-                        </button>
+                    {/* Mode Selector (3 Options) */}
+                    <div className="grid grid-cols-3 gap-2 bg-slate-100 dark:bg-slate-800/50 p-1 rounded-xl">
+                        {[
+                            { id: 'manual', label: 'Manual', icon: Settings2 },
+                            { id: 'random_1', label: 'Ruleta', icon: Dice5 },
+                            { id: 'simulacro_3', label: 'Simulacro', icon: BarChart }
+                        ].map((mode) => (
+                            <button
+                                key={mode.id}
+                                onClick={() => setExamMode(mode.id)}
+                                className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-xs font-bold transition-all gap-1.5 ${examMode === mode.id
+                                    ? 'bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-blue-400 ring-1 ring-black/5 dark:ring-white/10'
+                                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
+                                    }`}
+                            >
+                                <mode.icon className="w-4 h-4" />
+                                <span>{mode.label}</span>
+                            </button>
+                        ))}
                     </div>
 
                     {/* Source Selection Group */}
@@ -91,7 +95,7 @@ export default function StartScreen({ onStart }) {
                             <BookOpen className="w-4 h-4" /> Fuente de Conocimiento
                         </h3>
 
-                        {!isRandomMode ? (
+                        {examMode === 'manual' ? (
                             <>
                                 {/* 1. Upload */}
                                 <div className={topic ? "opacity-50 grayscale transition-all" : "transition-all"}>
@@ -115,17 +119,26 @@ export default function StartScreen({ onStart }) {
                                 </div>
                             </>
                         ) : (
-                            // Random Mode View
-                            <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-emerald-500/30 bg-emerald-500/5 rounded-2xl text-center">
-                                <Dice5 className="w-12 h-12 text-emerald-500 mb-4" />
-                                <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-2">Selección Aleatoria</h3>
-                                <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                                    Selecciona una carpeta con tus apuntes (PDF/MD/TXT). El sistema elegirá uno al azar.
+                            // Folder Selection View (Shared for Random & Simulacro)
+                            <div className={`flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-2xl text-center transition-all ${examMode === 'simulacro_3' ? 'border-indigo-500/30 bg-indigo-500/5' : 'border-emerald-500/30 bg-emerald-500/5'}`}>
+                                {examMode === 'simulacro_3' ? (
+                                    <BarChart className="w-12 h-12 text-indigo-500 mb-4" />
+                                ) : (
+                                    <Dice5 className="w-12 h-12 text-emerald-500 mb-4" />
+                                )}
+
+                                <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-2">
+                                    {examMode === 'simulacro_3' ? 'Simulacro Real (3 Temas)' : 'Modo Ruleta (1 Tema)'}
+                                </h3>
+                                <p className="text-sm text-slate-600 dark:text-slate-400 mb-6 max-w-xs mx-auto">
+                                    {examMode === 'simulacro_3'
+                                        ? 'Selecciona tu carpeta de apuntes. Elegiremos 3 temas al azar y haremos un muestreo inteligente.'
+                                        : 'Selecciona tu carpeta. Elegiremos un archivo al azar para el examen.'}
                                 </p>
 
                                 {folderPath ? (
-                                    <div className="w-full bg-white dark:bg-slate-900 p-3 rounded-xl border border-emerald-500/20 mb-4 flex items-center gap-3">
-                                        <FolderOpen className="w-5 h-5 text-emerald-500 shrink-0" />
+                                    <div className={`w-full bg-white dark:bg-slate-900 p-3 rounded-xl border mb-4 flex items-center gap-3 ${examMode === 'simulacro_3' ? 'border-indigo-500/20' : 'border-emerald-500/20'}`}>
+                                        <FolderOpen className={`w-5 h-5 shrink-0 ${examMode === 'simulacro_3' ? 'text-indigo-500' : 'text-emerald-500'}`} />
                                         <span className="text-xs font-mono text-slate-600 dark:text-slate-300 break-all text-left">
                                             {folderPath}
                                         </span>
@@ -134,7 +147,7 @@ export default function StartScreen({ onStart }) {
 
                                 <button
                                     onClick={handleSelectFolder}
-                                    className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-bold transition-all shadow-lg shadow-emerald-500/20 flex items-center gap-2"
+                                    className={`px-6 py-2 text-white rounded-lg font-bold transition-all shadow-lg flex items-center gap-2 ${examMode === 'simulacro_3' ? 'bg-indigo-500 hover:bg-indigo-600 shadow-indigo-500/20' : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'}`}
                                 >
                                     <FolderOpen className="w-4 h-4" />
                                     {folderPath ? 'Cambiar Carpeta' : 'Seleccionar Carpeta'}
