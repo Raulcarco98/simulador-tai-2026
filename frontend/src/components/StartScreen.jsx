@@ -69,24 +69,34 @@ export default function StartScreen({ onStart }) {
                 <div className="space-y-8">
 
                     {/* Mode Selector (3 Options) */}
+                    {/* Mode Selector (3 Options) */}
                     <div className="grid grid-cols-3 gap-2 bg-slate-100 dark:bg-slate-800/50 p-1 rounded-xl">
                         {[
                             { id: 'manual', label: 'Manual', icon: Settings2 },
                             { id: 'random_1', label: 'Ruleta', icon: Dice5 },
                             { id: 'simulacro_3', label: 'Simulacro', icon: BarChart }
-                        ].map((mode) => (
-                            <button
-                                key={mode.id}
-                                onClick={() => setExamMode(mode.id)}
-                                className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-xs font-bold transition-all gap-1.5 ${examMode === mode.id
-                                    ? 'bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-blue-400 ring-1 ring-black/5 dark:ring-white/10'
-                                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
-                                    }`}
-                            >
-                                <mode.icon className="w-4 h-4" />
-                                <span>{mode.label}</span>
-                            </button>
-                        ))}
+                        ].map((mode) => {
+                            const isElectron = !!window.electronAPI;
+                            const isDisabled = mode.id !== 'manual' && !isElectron;
+
+                            return (
+                                <button
+                                    key={mode.id}
+                                    onClick={() => !isDisabled && setExamMode(mode.id)}
+                                    disabled={isDisabled}
+                                    title={isDisabled ? "Solo disponible en la App de Escritorio" : ""}
+                                    className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-xs font-bold transition-all gap-1.5 ${examMode === mode.id
+                                            ? 'bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-blue-400 ring-1 ring-black/5 dark:ring-white/10'
+                                            : isDisabled
+                                                ? 'opacity-40 cursor-not-allowed grayscale text-slate-400'
+                                                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
+                                        }`}
+                                >
+                                    <mode.icon className="w-4 h-4" />
+                                    <span>{mode.label}</span>
+                                </button>
+                            );
+                        })}
                     </div>
 
                     {/* Source Selection Group */}
