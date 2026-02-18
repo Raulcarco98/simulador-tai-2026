@@ -44,10 +44,12 @@ async def create_exam(
     num_questions: int = Form(10),
     topic: str = Form(None),
     difficulty: str = Form("Intermedio"),
-    context: str = Form(None)
+    context: str = Form(None),
+    directory_path: str = Form(None)
 ):
     context_text = context
     
+    # 1. Handle File Upload
     if file:
         content = await file.read()
         if file.filename.endswith(".pdf"):
@@ -57,11 +59,55 @@ async def create_exam(
         
         if context_text and len(context_text) < 50:
              print("Warning: Extracted text is too short or empty.")
-    
+
+    # 2. Handle Roulette Mode (Directory)
+    elif directory_path:
+        try:
+            # Find all compatible files
+            import glob
+            import random
+            
+            # Search for md and txt files
+            files = glob.glob(os.path.join(directory_path, "*.md")) + \
+                    glob.glob(os.path.join(directory_path, "*.txt")) + \
+                    glob.glob(os.path.join(directory_path, "*.pdf"))
+            
+            if not files:
+                print(f"[RULETA] No se encontraron archivos compatibles en: {directory_path}")
+                # Fallback or error? For now, let it fail gracefully in generation or prompt
+            else:
+                selected_file = random.choice(files)
+                print(f"[RULETA] Tema seleccionado al azar: {os.path.basename(selected_file)}")
+                
+                # Yield log about selection
+                # We can't yield here directly, but we can print it and maybe send a log event first in the stream
+                
+                # Check file type
+                if selected_file.endswith(".pdf"):
+                    with open(selected_file, "rb") as f:
+                        context_text = extract_text_from_pdf(f.read())
+                else:
+                    with open(selected_file, "r", encoding="utf-8") as f:
+                        context_text = f.read()
+
+                # LOGGING: We will send this as a log event in the stream
+                
+        except Exception as e:
+            print(f"[RULETA] Error al leer directorio: {e}")
+
     print(f"Generating -> Questions: {num_questions} | Difficulty: {difficulty} | Topic: {topic or 'Default'}")
 
     async def event_stream():
         """SSE stream: yields logs and question batches."""
+        
+        # [RULETA] Log the selected file to Frontend
+        if directory_path and 'selected_file' in locals():
+             filename = os.path.basename(selected_file)
+             yield f"data: {json.dumps({'type': 'log', 'msg': f'🎲 [RULETA] Tema seleccionado: {filename}'})}\n\n"
+             # Also yield context so it can be saved for "Generate another like this" (optional, but good for UX)
+             if context_text:
+                 yield f"data: {json.dumps({'type': 'context', 'content': context_text})}\n\n"
+
         # Yield context first if it was extracted from a file
         if file and context_text:
              yield f"data: {json.dumps({'type': 'context', 'content': context_text})}\n\n"

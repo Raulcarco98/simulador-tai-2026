@@ -59,7 +59,10 @@ function App() {
     if (settings.topic) {
       formData.append("topic", settings.topic);
     }
-    if (settings.file) {
+    if (settings.mode === 'random' && settings.directory_path) {
+      formData.append("directory_path", settings.directory_path);
+      addLog(`[RULETA] Modo aleatorio activado en: ${settings.directory_path}`);
+    } else if (settings.file) {
       formData.append("file", settings.file);
     } else if (settings.context || lastContext) {
       // Use existing context if available and no new file
