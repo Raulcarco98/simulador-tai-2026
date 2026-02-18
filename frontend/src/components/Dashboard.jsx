@@ -5,6 +5,7 @@ import QuestionCard from "./QuestionCard";
 
 export default function Dashboard({ answers, questions, onRestart, onRetry }) {
     const [reviewFilter, setReviewFilter] = useState(null); // null | 'correct' | 'incorrect' | 'unanswered'
+    const [selectedDifficulty, setSelectedDifficulty] = useState("Intermedio");
     // Logic: Correct - (Errors / 3)
     const correctCount = answers.filter(a => a.isCorrect).length;
     const incorrectCount = answers.filter(a => a.answered && !a.isCorrect).length;
@@ -151,13 +152,27 @@ export default function Dashboard({ answers, questions, onRestart, onRetry }) {
                 </div>
             </div>
 
-            <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto">
+            <div className="flex flex-col md:flex-row gap-4 w-full md:w-auto items-center">
+                {/* Difficulty Selector for Regeneration */}
+                <div className="flex items-center gap-2 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-full px-4 py-2">
+                    <span className="text-xs font-bold text-slate-500 uppercase">Dificultad:</span>
+                    <select
+                        value={selectedDifficulty}
+                        onChange={(e) => setSelectedDifficulty(e.target.value)}
+                        className="bg-transparent text-slate-800 dark:text-white text-sm font-semibold focus:outline-none cursor-pointer"
+                    >
+                        <option value="Básico" className="bg-white dark:bg-slate-900">Básico</option>
+                        <option value="Intermedio" className="bg-white dark:bg-slate-900">Intermedio</option>
+                        <option value="Experto" className="bg-white dark:bg-slate-900">Experto</option>
+                    </select>
+                </div>
+
                 <button
-                    onClick={onRetry}
+                    onClick={() => onRetry(selectedDifficulty)}
                     className="flex justify-center items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-full font-bold shadow-lg shadow-blue-500/25 transition-all transform hover:-translate-y-0.5 active:translate-y-0 w-full md:w-auto"
                 >
                     <RefreshCcw className="w-4 h-4" />
-                    Generar otro igual
+                    Generar nuevo test
                 </button>
                 <button
                     onClick={onRestart}

@@ -19,7 +19,16 @@ function App() {
   const [debugInfo, setDebugInfo] = useState(null);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalLogs, setTerminalLogs] = useState([]);
+  const [lastContext, setLastContext] = useState(null);
   const terminalEndRef = useRef(null);
+
+  // Load lastContext from localStorage
+  useEffect(() => {
+    const savedContext = localStorage.getItem("lastContext");
+    if (savedContext) {
+      setLastContext(savedContext);
+    }
+  }, []);
 
   // Auto-scroll terminal to bottom
   useEffect(() => {
@@ -52,6 +61,10 @@ function App() {
     }
     if (settings.file) {
       formData.append("file", settings.file);
+    } else if (settings.context || lastContext) {
+      // Use existing context if available and no new file
+      formData.append("context", settings.context || lastContext);
+      addLog("Usando contexto previo de memoria...");
     }
 
     try {
@@ -95,6 +108,17 @@ function App() {
               // Log event from backend
               if (parsed && parsed.type === "log") {
                 addLog(parsed.msg);
+                continue;
+              }
+
+              // Context update event
+              if (parsed && parsed.type === "context") {
+                const newContext = parsed.content;
+                if (newContext) {
+                  setLastContext(newContext);
+                  localStorage.setItem("lastContext", newContext);
+                  addLog("Contexto actualizado y guardado.");
+                }
                 continue;
               }
 
@@ -309,7 +333,13 @@ function App() {
               answers={answers}
               questions={questions}
               onRestart={handleRestart}
-              onRetry={handleRetry}
+              onRetry={(newDifficulty) => {
+                if (config) {
+                  handleStartExam({ ...config, difficulty: newDifficulty || config.difficulty });
+                } else {
+                  setGameState("start");
+                }
+              }}
             />
           )}
         </main>

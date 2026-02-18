@@ -43,9 +43,10 @@ async def create_exam(
     file: UploadFile = File(None),
     num_questions: int = Form(10),
     topic: str = Form(None),
-    difficulty: str = Form("Intermedio")
+    difficulty: str = Form("Intermedio"),
+    context: str = Form(None)
 ):
-    context_text = None
+    context_text = context
     
     if file:
         content = await file.read()
@@ -61,6 +62,10 @@ async def create_exam(
 
     async def event_stream():
         """SSE stream: yields logs and question batches."""
+        # Yield context first if it was extracted from a file
+        if file and context_text:
+             yield f"data: {json.dumps({'type': 'context', 'content': context_text})}\n\n"
+
         async for item in generate_exam_streaming(num_questions, context_text, topic, difficulty):
             if isinstance(item, dict) and item.get("type") == "log":
                 yield f"data: {json.dumps(item)}\n\n"
