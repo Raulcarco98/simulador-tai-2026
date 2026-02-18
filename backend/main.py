@@ -45,12 +45,30 @@ async def create_exam(
     topic: str = Form(None),
     difficulty: str = Form("Intermedio"),
     context: str = Form(None),
-    directory_path: str = Form(None)
+    directory_path: str = Form(None),
+    mode: str = Form("manual")
 ):
     context_text = context
-    
-    # 1. Handle File Upload
-    if file:
+    selected_topics = []
+
+    # Helper function for reading fragments
+    def get_file_fragment(filepath, chunk_size=3000):
+        try:
+            if filepath.endswith(".pdf"):
+                with open(filepath, "rb") as f:
+                    text = extract_text_from_pdf(f.read())
+            else:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    text = f.read()
+            
+            # Simple truncation for now, can be improved to random slice
+            return text[:chunk_size]
+        except Exception as e:
+            print(f"Error reading {filepath}: {e}")
+            return ""
+
+    # 1. Handle File Upload (Manual)
+    if mode == "manual" and file:
         content = await file.read()
         if file.filename.endswith(".pdf"):
             context_text = extract_text_from_pdf(content)
@@ -60,59 +78,76 @@ async def create_exam(
         if context_text and len(context_text) < 50:
              print("Warning: Extracted text is too short or empty.")
 
-    # 2. Handle Roulette Mode (Directory)
-    elif directory_path:
+    # 2. Handle Directory Modes (Roulette & Simulacro)
+    elif directory_path and (mode == "random_1" or mode == "simulacro_3" or mode == "random"): # 'random' for legacy compatibility
         try:
-            # Find all compatible files
             import glob
             import random
             
-            # Search for md and txt files
             files = glob.glob(os.path.join(directory_path, "*.md")) + \
                     glob.glob(os.path.join(directory_path, "*.txt")) + \
                     glob.glob(os.path.join(directory_path, "*.pdf"))
             
             if not files:
                 print(f"[RULETA] No se encontraron archivos compatibles en: {directory_path}")
-                # Fallback or error? For now, let it fail gracefully in generation or prompt
             else:
-                selected_file = random.choice(files)
-                print(f"[RULETA] Tema seleccionado al azar: {os.path.basename(selected_file)}")
-                
-                # Yield log about selection
-                # We can't yield here directly, but we can print it and maybe send a log event first in the stream
-                
-                # Check file type
-                if selected_file.endswith(".pdf"):
-                    with open(selected_file, "rb") as f:
-                        context_text = extract_text_from_pdf(f.read())
-                else:
-                    with open(selected_file, "r", encoding="utf-8") as f:
-                        context_text = f.read()
+                if mode == "simulacro_3":
+                    # --- REAL SIMULATOR MODE ---
+                    # Select up to 3 unique files
+                    k = min(3, len(files))
+                    selected_files = random.sample(files, k)
+                    
+                    context_parts = []
+                    for fpath in selected_files:
+                        fname = os.path.basename(fpath)
+                        selected_topics.append(fname)
+                        fragment = get_file_fragment(fpath)
+                        context_parts.append(f"### TEMA: {fname} ###\n{fragment}\n")
+                    
+                    context_text = "\n".join(context_parts)
+                    print(f"[SIMULACRO] Temas elegidos: {', '.join(selected_topics)}")
+                    
+                else: 
+                    # --- SINGLE TOPIC ROULETTE ---
+                    selected_file = random.choice(files)
+                    fname = os.path.basename(selected_file)
+                    selected_topics.append(fname)
+                    print(f"[RULETA] Tema seleccionado al azar: {fname}")
+                    
+                    # Read full content for single mode
+                    if selected_file.endswith(".pdf"):
+                        with open(selected_file, "rb") as f:
+                            context_text = extract_text_from_pdf(f.read())
+                    else:
+                        with open(selected_file, "r", encoding="utf-8") as f:
+                            context_text = f.read()
 
-                # LOGGING: We will send this as a log event in the stream
-                
         except Exception as e:
             print(f"[RULETA] Error al leer directorio: {e}")
 
-    print(f"Generating -> Questions: {num_questions} | Difficulty: {difficulty} | Topic: {topic or 'Default'}")
+    print(f"Generating -> Questions: {num_questions} | Difficulty: {difficulty} | Topic: {topic or 'Default'} | Mode: {mode}")
 
     async def event_stream():
         """SSE stream: yields logs and question batches."""
         
-        # [RULETA] Log the selected file to Frontend
-        if directory_path and 'selected_file' in locals():
-             filename = os.path.basename(selected_file)
-             yield f"data: {json.dumps({'type': 'log', 'msg': f'🎲 [RULETA] Tema seleccionado: {filename}'})}\n\n"
-             # Also yield context so it can be saved for "Generate another like this" (optional, but good for UX)
+        # Log selected topics to Frontend
+        if selected_topics:
+             if mode == "simulacro_3":
+                 msg = f"🎲 [SIMULACRO] Temas: {', '.join(selected_topics)}"
+             else:
+                 msg = f"🎲 [RULETA] Tema: {selected_topics[0]}"
+                 
+             yield f"data: {json.dumps({'type': 'log', 'msg': msg})}\n\n"
+             
+             # Yield context for persistence (optional, maybe heavy for 3 topics but useful)
              if context_text:
                  yield f"data: {json.dumps({'type': 'context', 'content': context_text})}\n\n"
 
         # Yield context first if it was extracted from a file
-        if file and context_text:
+        if (mode == "manual") and file and context_text:
              yield f"data: {json.dumps({'type': 'context', 'content': context_text})}\n\n"
 
-        async for item in generate_exam_streaming(num_questions, context_text, topic, difficulty):
+        async for item in generate_exam_streaming(num_questions, context_text, topic, difficulty, mode=mode):
             if isinstance(item, dict) and item.get("type") == "log":
                 yield f"data: {json.dumps(item)}\n\n"
             elif isinstance(item, list):

@@ -298,7 +298,7 @@ def get_base_prompt(num_questions, difficulty):
 
 
 # === STREAMING GENERATOR (Unified with Segmentation) ===
-async def generate_exam_streaming(num_questions: int, context_text: str = None, topic: str = None, difficulty: str = "Intermedio"):
+async def generate_exam_streaming(num_questions: int, context_text: str = None, topic: str = None, difficulty: str = "Intermedio", mode: str = "manual"):
     """
     Async generator. 
     Expert Mode: Splits generation into 2 blocks (Half 1 / Half 2) to ensure full context coverage.
@@ -364,6 +364,10 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
             
             # STRICT CONTEXT INSTRUCTION (REFINED)
             current_prompt += "\n\n⚠️ INSTRUCCION CRITICA DE JEFE DE TRIBUNAL:"
+            
+            if mode == "simulacro_3":
+                 current_prompt += "\n0. ESTÁS ANTE UN SIMULACRO MULTITEMA (3 Bloques). Debes generar preguntas equilibradas (aprox. una cantidad igual por cada bloque temático)."
+            
             current_prompt += "\n1. Genera las preguntas BASANDOTE UNICAMENTE EN EL TEXTO DE ARRIBA."
             current_prompt += "\n2. IMPORTANTE: NO menciones 'el texto', 'el fragmento', 'la fuente' o 'el documento' en los enunciados. Formula la pregunta como si fuera un examen oficial (ej: 'Segun la Ley 39/2015...')."
             current_prompt += "\n3. Si el texto es un fragmento, ignora el corte y pregunta solo sobre lo visible, PERO SIN MENCIONAR QUE ES UN FRAGMENTO."

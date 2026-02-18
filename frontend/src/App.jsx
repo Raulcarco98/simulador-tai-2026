@@ -56,12 +56,16 @@ function App() {
     formData.append("num_questions", settings.numQuestions);
     formData.append("difficulty", settings.difficulty || "Intermedio");
 
+    formData.append("mode", settings.mode || "manual");
+
     if (settings.topic) {
       formData.append("topic", settings.topic);
     }
-    if (settings.mode === 'random' && settings.directory_path) {
+
+    // Directory handling (Random or Simulacro)
+    if (settings.directory_path) {
       formData.append("directory_path", settings.directory_path);
-      addLog(`[RULETA] Modo aleatorio activado en: ${settings.directory_path}`);
+      addLog(`[MODO ${settings.mode.toUpperCase()}] Carpeta: ${settings.directory_path}`);
     } else if (settings.file) {
       formData.append("file", settings.file);
     } else if (settings.context || lastContext) {

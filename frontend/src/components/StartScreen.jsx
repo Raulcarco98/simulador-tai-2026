@@ -191,12 +191,18 @@ export default function StartScreen({ onStart }) {
 
                     <button
                         onClick={handleStart}
-                        disabled={isRandomMode ? !folderPath : (!file && !topic && false)}
-                        className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed text-white ${isRandomMode
-                            ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-500/25'
-                            : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-blue-500/25'}`}
+                        disabled={examMode === 'manual' ? (!file && !topic) : !folderPath}
+                        className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed text-white
+                            ${examMode === 'simulacro_3'
+                                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 shadow-indigo-500/25'
+                                : examMode === 'random_1'
+                                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-500/25'
+                                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-blue-500/25'
+                            }`}
                     >
-                        <span>{isRandomMode ? '¡Girar Ruleta y Generar!' : 'Generar Examen'}</span>
+                        <span>
+                            {examMode === 'simulacro_3' ? 'Iniciar Simulacro Real' : examMode === 'random_1' ? '¡Girar Ruleta y Generar!' : 'Generar Examen'}
+                        </span>
                         <Play className="w-5 h-5 fill-current opacity-80 group-hover:translate-x-1 transition-transform" />
                     </button>
                 </div>
