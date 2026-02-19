@@ -68,8 +68,8 @@ function App() {
       addLog(`[MODO ${settings.mode.toUpperCase()}] Carpeta: ${settings.directory_path}`);
     } else if (settings.file) {
       formData.append("file", settings.file);
-    } else if (settings.context || lastContext) {
-      // Use existing context if available and no new file
+    } else if ((settings.context || lastContext) && !settings.topic) {
+      // Use existing context ONLY if no new topic/file/folder
       formData.append("context", settings.context || lastContext);
       addLog("Usando contexto previo de memoria...");
     }

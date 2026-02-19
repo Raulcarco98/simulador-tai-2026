@@ -18,8 +18,8 @@ let mainWindow;
 
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 1200,
-        height: 800,
+        width: 1400,
+        height: 1000,
         backgroundColor: '#020617',
         webPreferences: {
             nodeIntegration: false,
