@@ -19,27 +19,21 @@ if _key1:
 if _key2:
     PROJECT_KEYS.append({"label": "Proyecto Backup", "key": _key2})
 
-current_project = 0
 clients = [genai.Client(api_key=p["key"]) for p in PROJECT_KEYS]
 
-
-def _get_client():
-    """Returns the current active project client."""
+def _get_client_for_attempt(attempt_idx):
+    """Returns the client and project label based on attempt step (0-5)."""
+    # Even attempts (0, 2, 4) use index 0 (Proyecto A)
+    # Odd attempts (1, 3, 5) use index 1 (Proyecto Backup)
+    # If no Backup key exists, fallback to Proyecto A safely
+    client_idx = attempt_idx % 2
+    if client_idx >= len(clients):
+        client_idx = 0
+    
     if not clients:
         return None, "Sin proyecto"
-    idx = current_project % len(clients)
-    return clients[idx], PROJECT_KEYS[idx]["label"]
-
-
-def _rotate_project():
-    """Switches to the next independent GCP project. Fast: separate quotas."""
-    global current_project
-    if len(clients) > 1:
-        old_label = PROJECT_KEYS[current_project % len(clients)]["label"]
-        current_project = (current_project + 1) % len(clients)
-        new_label = PROJECT_KEYS[current_project]["label"]
-        return old_label, new_label
-    return None, None
+        
+    return clients[client_idx], PROJECT_KEYS[client_idx]["label"]
 
 
 # Generation config
@@ -380,24 +374,19 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
         # Start attempts from the memorized tier
         for attempt in range(current_tier_start, max_retries):
             try:
-                active_client, project_label = _get_client()
+                active_client, project_label = _get_client_for_attempt(attempt)
                 
                 # === MODEL FALLBACK STRATEGY ===
-                # Intentos 0-1: gemini-2.0-flash
-                # Intentos 2-3: gemini-2.0-flash-lite (Quota bucket distinta)
-                # Intentos 4+:  gemini-exp-1206 (Experimental/Thinking - Respaldo final)
-                current_model = "gemini-2.0-flash"
+                # Intentos 0-1: gemini-3.0-flash
+                # Intentos 2-3: gemini-2.5-flash
+                # Intentos 4-5: gemini-2.0-flash
+                current_model = "gemini-3.0-flash"
                 if attempt >= 2:
-                    current_model = "gemini-2.0-flash-lite"
+                    current_model = "gemini-2.5-flash"
                 if attempt >= 4:
-                    current_model = "gemini-exp-1206"
-
-                if attempt == 2 and current_model == "gemini-2.0-flash-lite":
-                     yield {"type": "log", "msg": f"[ALERTA] Cuota de Gemini 2.0 Flash agotada. Probando con Gemini 2.0 Flash-Lite..."}
-                elif attempt == 4:
-                     yield {"type": "log", "msg": f"[ALERTA] Cuota de Flash-Lite agotada. Probando con Gemini Exp 1206..."}
+                    current_model = "gemini-2.0-flash"
                 
-                yield {"type": "log", "msg": f"[{project_label}] Llamando a {current_model} (intento {attempt+1}/{max_retries})..."}
+                yield {"type": "log", "msg": f"[LOG] Intento {attempt+1}/{max_retries}: Llamando a {current_model} con {project_label}..."}
                 _safe_print(f"[{project_label}] Request start {current_model}...")
                 
                 response = await active_client.aio.models.generate_content(
@@ -417,13 +406,8 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
                     all_raw_questions.extend(current_questions)
                     
                     # === UPDATE SESSION MEMORY ===
-                    # If we succeeded at a higher tier (e.g. attempt 2 or 3 -> tier 2), remember it for next block.
-                    # Round down to even number (0, 2, 4) to ensure we start at the beginning of the tier.
-                    new_tier = (attempt // 2) * 2
-                    if new_tier > current_tier_start:
-                        current_tier_start = new_tier
-                        # Only log if it's the first time we realize this
-                        # yield {"type": "log", "msg": f"[MEMORIA] Tier {current_tier_start} guardado para siguientes bloques."}
+                    # If we succeeded, remember the tier for the next block so we don't start from an exhausted model again.
+                    current_tier_start = attempt
                     
                     block_success = True
                     break # Block Success!
@@ -436,9 +420,7 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
                         all_raw_questions.extend(current_questions)
                         
                         # === UPDATE SESSION MEMORY ===
-                        new_tier = (attempt // 2) * 2
-                        if new_tier > current_tier_start:
-                            current_tier_start = new_tier
+                        current_tier_start = attempt
 
                         block_success = True
                         break # Block Success!
@@ -447,39 +429,32 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
             
             except genai_errors.ClientError as e:
                 error_str = str(e)
-                is_rate_limit = "429" in error_str or "RESOURCE_EXHAUSTED" in error_str
-                
-                if is_rate_limit:
-                    old_label, new_label = _rotate_project()
-                    if old_label:
-                        # Progressive backoff: 5s, 10s, then 20s cap
-                        backoff_times = [5, 10]
-                        wait_time = backoff_times[attempt] if attempt < len(backoff_times) else 20
-                        
-                        yield {"type": "log", "msg": f"[DEBUG] Limite alcanzado. Reintentando en {wait_time}s con el siguiente proyecto..."}
-                        _safe_print(f"[DEBUG] {wait_time}s sleep triggered...")
-                        await asyncio.sleep(wait_time)
-                        continue
-                    elif attempt < max_retries - 1:
-                        wait_time = 10 * (2 ** min(attempt, 3))
-                        yield {"type": "log", "msg": f"[DEBUG] Todos los proyectos agotados. Esperando {wait_time}s..."}
-                        await asyncio.sleep(wait_time)
-                        continue
-                
                 yield {"type": "log", "msg": f"[ERROR] ClientError: {error_str[:200]}"}
+                
                 if attempt < max_retries - 1:
-                     await asyncio.sleep(5)
-                     continue
+                    if attempt % 2 == 0:
+                        # Falló Proyecto A. Esperar 5s antes de probar Proyecto Backup
+                        yield {"type": "log", "msg": f"[DEBUG] Probando llave backup en 5s..."}
+                        await asyncio.sleep(5)
+                    else:
+                        # Fallaron Proyecto A y Proyecto Backup para este modelo.
+                        # Esperar 15s antes de saltar al siguiente modelo.
+                        yield {"type": "log", "msg": f"[DEBUG] Ambas llaves fallaron. Esperando 15s antes de cambiar de modelo lider..."}
+                        await asyncio.sleep(15)
+                continue
                         
             except Exception as e:
                 error_str = str(e)
                 yield {"type": "log", "msg": f"[ERROR] {type(e).__name__}: {error_str[:200]}"}
                 
                 if attempt < max_retries - 1:
-                    wait_time = 5 * (2 ** min(attempt, 3))
-                    yield {"type": "log", "msg": f"[DEBUG] Reintentando en {wait_time}s..."}
-                    await asyncio.sleep(wait_time)
-                    continue
+                    if attempt % 2 == 0:
+                        yield {"type": "log", "msg": f"[DEBUG] Error inesperado. Probando llave backup en 5s..."}
+                        await asyncio.sleep(5)
+                    else:
+                        yield {"type": "log", "msg": f"[DEBUG] Error inesperado con ambas llaves. Esperando 15s antes de bajar modelo..."}
+                        await asyncio.sleep(15)
+                continue
         
         if not block_success:
             yield {"type": "log", "msg": f"[ERROR] Fallo critico en bloque {task_idx+1}. Se devolveran resultados parciales."}
