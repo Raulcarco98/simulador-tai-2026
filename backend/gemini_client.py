@@ -305,9 +305,9 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
         return
 
     # Log inicial
-    _, initial_project = _get_client()
+    _, initial_project = _get_client_for_attempt(0)
     yield {"type": "log", "msg": f"[INICIO] {num_questions} preguntas | Dificultad: {difficulty} | Proyectos: {len(clients)}"}
-    yield {"type": "log", "msg": f"[INICIO] Proyecto activo: {initial_project}"}
+    yield {"type": "log", "msg": f"[INICIO] Proyecto inicial: {initial_project}"}
 
     if topic and not context_text:
         context_text = f"Tema solicitado: {topic}"
