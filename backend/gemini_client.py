@@ -377,10 +377,10 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
                 active_client, project_label = _get_client_for_attempt(attempt)
                 
                 # === MODEL FALLBACK STRATEGY ===
-                # Intentos 0-1: gemini-3.0-flash
+                # Intentos 0-1: gemini-3-flash-preview
                 # Intentos 2-3: gemini-2.5-flash
                 # Intentos 4-5: gemini-2.0-flash
-                current_model = "gemini-3.0-flash"
+                current_model = "gemini-3-flash-preview"
                 if attempt >= 2:
                     current_model = "gemini-2.5-flash"
                 if attempt >= 4:
