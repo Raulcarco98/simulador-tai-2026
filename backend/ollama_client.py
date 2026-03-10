@@ -3,49 +3,13 @@ import json
 import asyncio
 import re
 import random
+import aiohttp
 from dotenv import load_dotenv
-from google import genai
-from google.genai import types, errors as genai_errors
 
 load_dotenv()
 
-# === MULTI-PROJECT KEY MANAGEMENT ===
-# Each key belongs to an independent GCP project with separate quotas
-PROJECT_KEYS = []
-_key1 = os.getenv("GEMINI_API_KEY")
-_key2 = os.getenv("GEMINI_API_KEY_2")
-if _key1:
-    PROJECT_KEYS.append({"label": "Proyecto A", "key": _key1})
-if _key2:
-    PROJECT_KEYS.append({"label": "Proyecto Backup", "key": _key2})
-
-clients = [genai.Client(api_key=p["key"]) for p in PROJECT_KEYS]
-
-def _get_client_for_attempt(attempt_idx):
-    """Returns the client and project label based on attempt step (0-5)."""
-    # Even attempts (0, 2, 4) use index 0 (Proyecto A)
-    # Odd attempts (1, 3, 5) use index 1 (Proyecto Backup)
-    # If no Backup key exists, fallback to Proyecto A safely
-    client_idx = attempt_idx % 2
-    if client_idx >= len(clients):
-        client_idx = 0
-    
-    if not clients:
-        return None, "Sin proyecto"
-        
-    return clients[client_idx], PROJECT_KEYS[client_idx]["label"]
-
-
-# Generation config
-generation_config = types.GenerateContentConfig(
-    temperature=0.8,
-    top_p=0.95,
-    top_k=40,
-    max_output_tokens=8192,  # Single request needs more tokens
-    response_mime_type="application/json",
-)
-
-MODEL_NAME = "gemini-2.0-flash"
+# We don't need API keys for local Ollama, but we'll leave this empty for structural similarity
+OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 
 
 # === UTILIDADES ===
@@ -197,8 +161,8 @@ def shuffle_options(question):
                 (r"(respuesta\s+correcta\s+(?:es|sea)\s+(?:la\s+)?){}\b".format(old_letter), r"\g<1>" + new_letter),
                 # "Correcta: X"
                 (r"(correcta:\s*\[?){}\]?".format(old_letter), r"\g<1>" + new_letter),
-                # "Solución: X"
-                (r"(soluci[oó]n:\s*){}\b".format(old_letter), r"\g<1>" + new_letter),
+                # "SoluciÃ³n: X"
+                (r"(soluci[oÃ³]n:\s*){}\b".format(old_letter), r"\g<1>" + new_letter),
                 # Inicio con "X)" o "X."
                 (r"^{}([.\)])".format(old_letter), new_letter + r"\1")
             ]
@@ -229,7 +193,7 @@ def get_base_prompt(num_questions, difficulty, has_context=False):
 
     if difficulty.upper() == "EXPERTO":
         return f"""
-    Rol: Examinador TAI C1. Genera {num_questions} preguntas.
+    Rol: Examinador TAI C1. Genera {num_questions} preguntas obligatoriamente en formato JSON sin NADA mas.
     
     BLINDAJE RESPUESTA UNICA:
     - REGLA: 1 Verdadera, 3 Falsas indiscutibles.
@@ -247,7 +211,7 @@ def get_base_prompt(num_questions, difficulty, has_context=False):
     PROCESO (SELF-CORRECTION):
     1. Piensa pregunta y Verdadera.
     2. Genera 3 Falsas (dato alterado).
-    3. SELF-CHECK: ¿Alguna falsa es defendible? Si -> Reescribela.
+    3. SELF-CHECK: Alguna falsa es defendible? Si -> Reescribela.
     4. REDACTA explicacion: "La respuesta correcta es [Letra] porque...".
     5. Verifica: Si dices "Es la B", correct_index=1.
 
@@ -265,7 +229,7 @@ def get_base_prompt(num_questions, difficulty, has_context=False):
     
     # BASICO / INTERMEDIO (OPTIMIZADO)
     return f"""
-    Rol: Preparador Oposiciones. Test de {num_questions} preguntas.
+    Rol: Preparador Oposiciones. Test de {num_questions} preguntas obligatoriamente en formato JSON sin NADA mas.
     
     NIVEL: {difficulty.upper()}
     
@@ -299,22 +263,14 @@ def get_base_prompt(num_questions, difficulty, has_context=False):
 
 
 # === STREAMING GENERATOR (Unified with Segmentation) ===
-async def generate_exam_streaming(num_questions: int, context_text: str = None, topic: str = None, difficulty: str = "Intermedio", mode: str = "manual"):
+async def generate_exam_streaming(num_questions: int, context_text: str = None, topic: str = None, difficulty: str = "Intermedio", mode: str = "manual", model_name: str = "deepseek-v3.2:cloud"):
     """
-    Async generator. 
-    Expert Mode: Splits generation into 2 blocks (Half 1 / Half 2) to ensure full context coverage.
-    Other Modes: Single unified request.
+    Async generator that calls the local Ollama instance.
     """
     
-    if not clients:
-        yield {"type": "log", "msg": "[ERROR] No hay API Keys configuradas. Revisa .env"}
-        yield [{"id": 1, "question": "Error: API Key no configurada", "options": ["A","B","C","D"], "correct_index": 0, "explanation": "Configura .env"}]
-        return
-
     # Log inicial
-    _, initial_project = _get_client_for_attempt(0)
-    yield {"type": "log", "msg": f"[INICIO] {num_questions} preguntas | Dificultad: {difficulty} | Proyectos: {len(clients)}"}
-    yield {"type": "log", "msg": f"[INICIO] Proyecto inicial: {initial_project}"}
+    yield {"type": "log", "msg": f"[INICIO] {num_questions} preguntas | Dificultad: {difficulty} | Motor: Ollama Local"}
+    yield {"type": "log", "msg": f"[INICIO] Model: {model_name}"}
 
     if topic and not context_text:
         context_text = f"Tema solicitado: {topic}"
@@ -332,20 +288,12 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
     })
 
     all_raw_questions = []
-    max_retries = 6 
+    max_retries = 3 
     
-    # === SESSION MEMORY ===
-    # Tracks the best working model tier index (0=2.0, 2=Lite, 4=Exp)
-    # If Block 1 fails on 2.0 and succeeds on Lite (attempt 2), Block 2 starts at attempt 2.
-    current_tier_start = 0 
-
     # === EXECUTION LOOP ===
     for task_idx, task in enumerate(generation_tasks):
         if len(generation_tasks) > 1:
             yield {"type": "log", "msg": f"\n[EXPERTO] Generando preguntas {task['desc']}..."}
-            if current_tier_start > 0:
-                 model_name = "gemini-2.0-flash-lite" if current_tier_start == 2 else "gemini-exp-1206"
-                 yield {"type": "log", "msg": f"[OPTIMIZACION] Saltando modelos agotados. Iniciando con {model_name} (Tier {current_tier_start})..."}
         else:
             yield {"type": "log", "msg": f"\n[GENERANDO] Peticion unica de {num_questions} preguntas..."}
         
@@ -361,14 +309,14 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
             # Limit context length per block if needed, though splitting helps handling limits naturally
             # Using 25000 chars roughly per block if full doc is huge
             block_ctx = task["context"][:30000] 
-            # Use generic header to avoid confusing the model into writing "Según el fragmento..."
+            # Use generic header to avoid confusing the model into writing "SegÃºn el fragmento..."
             current_prompt += f"\n\nDOCUMENTO NORMATIVO DE REFERENCIA:\n{block_ctx}"
             
             # STRICT CONTEXT INSTRUCTION (REFINED)
-            current_prompt += "\n\n⚠️ INSTRUCCION CRITICA DE JEFE DE TRIBUNAL:"
+            current_prompt += "\n\nâš ï¸  INSTRUCCION CRITICA DE JEFE DE TRIBUNAL:"
             
             if mode == "simulacro_3":
-                 current_prompt += "\n0. ESTÁS ANTE UN SIMULACRO MULTITEMA (3 Bloques). Debes generar preguntas equilibradas (aprox. una cantidad igual por cada bloque temático)."
+                 current_prompt += "\n0. ESTÃ S ANTE UN SIMULACRO MULTITEMA (3 Bloques). Debes generar preguntas equilibradas (aprox. una cantidad igual por cada bloque temÃ¡tico)."
             
             current_prompt += "\n1. Genera las preguntas BASANDOTE UNICAMENTE EN EL TEXTO DE ARRIBA."
             current_prompt += "\n2. IMPORTANTE: NO menciones 'el texto', 'el fragmento', 'la fuente' o 'el documento' en los enunciados. Formula la pregunta como si fuera un examen oficial."
@@ -379,89 +327,72 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
         # Retry Loop for this Block
         block_success = False
         
-        # Start attempts from the memorized tier
-        for attempt in range(current_tier_start, max_retries):
+        # Start attempts
+        for attempt in range(0, max_retries):
             try:
-                active_client, project_label = _get_client_for_attempt(attempt)
+                yield {"type": "log", "msg": f"[LOG] Intento {attempt+1}/{max_retries}: Llamando a Ollama ({model_name})..."}
+                _safe_print(f"[Ollama] Request start {model_name}...")
                 
-                # === MODEL FALLBACK STRATEGY ===
-                # Intentos 0-1: gemini-3-flash-preview
-                # Intentos 2-3: gemini-2.5-flash
-                # Intentos 4-5: gemini-2.0-flash
-                current_model = "gemini-3-flash-preview"
-                if attempt >= 2:
-                    current_model = "gemini-2.5-flash"
-                if attempt >= 4:
-                    current_model = "gemini-2.0-flash"
+                payload = {
+                    "model": model_name,
+                    "prompt": current_prompt,
+                    "system": "Eres una API que responde estrictamente en JSON. NUNCA generes texto introductorio, markdown ni explicaciones fuera del JSON. Tu respuesta DEBE empezar con el caracter '[' y terminar con ']'.",
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.8,
+                        "top_p": 0.95,
+                        "num_predict": 4000
+                    }
+                }
                 
-                yield {"type": "log", "msg": f"[LOG] Intento {attempt+1}/{max_retries}: Llamando a {current_model} con {project_label}..."}
-                _safe_print(f"[{project_label}] Request start {current_model}...")
-                
-                response = await active_client.aio.models.generate_content(
-                    model=current_model,
-                    contents=current_prompt,
-                    config=generation_config,
-                )
-                
-                raw_text = response.text
-                yield {"type": "log", "msg": f"[{project_label}] Respuesta recibida. Parseando JSON..."}
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(OLLAMA_URL, json=payload, timeout=aiohttp.ClientTimeout(total=300)) as response:
+                        if response.status != 200:
+                            error_text = await response.text()
+                            raise Exception(f"Ollama returned HTTP {response.status}: {error_text}")
+                            
+                        result = await response.json()
+                        raw_text = result.get("response", "")
+        
+                yield {"type": "log", "msg": f"[Ollama] Respuesta recibida. Parseando JSON..."}
                 
                 # Robust JSON parsing
                 current_questions = []
                 try:
                     current_questions = json.loads(raw_text)
-                    yield {"type": "log", "msg": f"[{project_label}] JSON OK: {len(current_questions)} preguntas."}
+                    if isinstance(current_questions, dict):
+                        current_questions = [current_questions]
+                    if not current_questions:
+                        raise ValueError("JSON structure is empty")
+                    yield {"type": "log", "msg": f"[Ollama] JSON OK: {len(current_questions)} preguntas."}
                     all_raw_questions.extend(current_questions)
-                    
-                    # === UPDATE SESSION MEMORY ===
-                    # If we succeeded, remember the tier for the next block so we don't start from an exhausted model again.
-                    current_tier_start = attempt
                     
                     block_success = True
                     break # Block Success!
-                except json.JSONDecodeError:
-                    yield {"type": "log", "msg": f"[{project_label}] JSON directo fallo. Limpiando..."}
+                except (json.JSONDecodeError, ValueError) as e:
+                    yield {"type": "log", "msg": f"[Ollama] JSON directo fallo ({e}). Limpiando..."}
                     cleaned_json = _clean_json_response(raw_text)
                     try:
                         current_questions = json.loads(cleaned_json)
-                        yield {"type": "log", "msg": f"[{project_label}] JSON limpiado: {len(current_questions)} preguntas recuperadas."}
+                        if isinstance(current_questions, dict):
+                            current_questions = [current_questions]
+                        if not current_questions:
+                            raise ValueError("JSON limpiado structure is empty")
+                        yield {"type": "log", "msg": f"[Ollama] JSON limpiado: {len(current_questions)} preguntas recuperadas."}
                         all_raw_questions.extend(current_questions)
                         
-                        # === UPDATE SESSION MEMORY ===
-                        current_tier_start = attempt
-
                         block_success = True
                         break # Block Success!
-                    except json.JSONDecodeError as je:
-                        yield {"type": "log", "msg": f"[{project_label}] JSON irrecuperable: {je}. Raw: {raw_text[:150]}..."}
+                    except (json.JSONDecodeError, ValueError) as je:
+                        raise Exception(f"JSON Parsing fully failed: {je}. Raw output snip: {raw_text[:200]}...")
             
-            except genai_errors.ClientError as e:
-                error_str = str(e)
-                yield {"type": "log", "msg": f"[ERROR] ClientError: {error_str[:200]}"}
-                
-                if attempt < max_retries - 1:
-                    if attempt % 2 == 0:
-                        # Falló Proyecto A. Esperar 5s antes de probar Proyecto Backup
-                        yield {"type": "log", "msg": f"[DEBUG] Probando llave backup en 5s..."}
-                        await asyncio.sleep(5)
-                    else:
-                        # Fallaron Proyecto A y Proyecto Backup para este modelo.
-                        # Esperar 15s antes de saltar al siguiente modelo.
-                        yield {"type": "log", "msg": f"[DEBUG] Ambas llaves fallaron. Esperando 15s antes de cambiar de modelo lider..."}
-                        await asyncio.sleep(15)
-                continue
-                        
             except Exception as e:
                 error_str = str(e)
                 yield {"type": "log", "msg": f"[ERROR] {type(e).__name__}: {error_str[:200]}"}
                 
                 if attempt < max_retries - 1:
-                    if attempt % 2 == 0:
-                        yield {"type": "log", "msg": f"[DEBUG] Error inesperado. Probando llave backup en 5s..."}
-                        await asyncio.sleep(5)
-                    else:
-                        yield {"type": "log", "msg": f"[DEBUG] Error inesperado con ambas llaves. Esperando 15s antes de bajar modelo..."}
-                        await asyncio.sleep(15)
+                    yield {"type": "log", "msg": f"[DEBUG] Error inesperado. Probando de nuevo en 5s..."}
+                    await asyncio.sleep(5)
                 continue
         
         if not block_success:
@@ -480,6 +411,8 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
         fixes_count = 0
         for i, q in enumerate(all_raw_questions):
             if q:
+                if type(q) != dict:
+                    continue
                 q["id"] = i + 1 # Renumber sequentially
                 old_idx = q.get("correct_index")
                 fixed_q = validate_and_fix_question(q)
