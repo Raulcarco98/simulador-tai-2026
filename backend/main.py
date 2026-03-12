@@ -6,7 +6,11 @@ import json
 from dotenv import load_dotenv
 from pypdf import PdfReader
 import io
-from gemini_client import generate_exam_streaming
+
+# We import all generator methods
+from gemini_client import generate_exam_streaming as generate_exam_gemini
+from ollama_client import generate_exam_streaming as generate_exam_ollama
+from groq_client import generate_exam_streaming as generate_exam_groq
 
 load_dotenv()
 
@@ -46,7 +50,9 @@ async def create_exam(
     difficulty: str = Form("Intermedio"),
     context: str = Form(None),
     directory_path: str = Form(None),
-    mode: str = Form("manual")
+    mode: str = Form("manual"),
+    ai_engine: str = Form("gemini"),
+    ollama_model: str = Form("deepseek-v3.2:cloud")
 ):
     context_text = context
     selected_topics = []
@@ -125,7 +131,7 @@ async def create_exam(
         except Exception as e:
             print(f"[RULETA] Error al leer directorio: {e}")
 
-    print(f"Generating -> Questions: {num_questions} | Difficulty: {difficulty} | Topic: {topic or 'Default'} | Mode: {mode}")
+    print(f"Generating -> Questions: {num_questions} | Difficulty: {difficulty} | Topic: {topic or 'Default'} | Mode: {mode} | Engine: {ai_engine} ({ollama_model if ai_engine == 'ollama' else 'N/A'})")
 
     async def event_stream():
         """SSE stream: yields logs and question batches."""
@@ -147,7 +153,15 @@ async def create_exam(
         if (mode == "manual") and file and context_text:
              yield f"data: {json.dumps({'type': 'context', 'content': context_text})}\n\n"
 
-        async for item in generate_exam_streaming(num_questions, context_text, topic, difficulty, mode=mode):
+        # Dynamically choose generator based on engine
+        if ai_engine == "ollama":
+            generator_source = generate_exam_ollama(num_questions, context_text, topic, difficulty, mode=mode, model_name=ollama_model)
+        elif ai_engine == "groq":
+            generator_source = generate_exam_groq(num_questions, context_text, topic, difficulty, mode=mode)
+        else:
+            generator_source = generate_exam_gemini(num_questions, context_text, topic, difficulty, mode=mode)
+
+        async for item in generator_source:
             if isinstance(item, dict) and item.get("type") == "log":
                 yield f"data: {json.dumps(item)}\n\n"
             elif isinstance(item, list):

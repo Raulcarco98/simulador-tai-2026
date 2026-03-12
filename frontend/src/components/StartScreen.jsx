@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Play, Settings2, BookOpen, BarChart, FolderOpen, Dice5 } from 'lucide-react';
+import { Play, Settings2, BookOpen, BarChart, FolderOpen, Dice5, Zap, Server, CloudLightning } from 'lucide-react';
 import UploadZone from './UploadZone';
 
 export default function StartScreen({ onStart }) {
@@ -8,9 +8,10 @@ export default function StartScreen({ onStart }) {
     const [minutes, setMinutes] = useState(15);
     const [file, setFile] = useState(null);
     const [topic, setTopic] = useState("");
-    const [difficulty, setDifficulty] = useState("Intermedio");
+    const [difficulty, setDifficulty] = useState("Experto");
     const [examMode, setExamMode] = useState('manual'); // 'manual' | 'random_1' | 'simulacro_3'
     const [folderPath, setFolderPath] = useState("");
+    const [aiEngine, setAiEngine] = useState("gemini"); // "gemini" | "ollama" | "groq"
 
     const handleStart = () => {
         onStart({
@@ -20,7 +21,8 @@ export default function StartScreen({ onStart }) {
             topic: examMode === 'manual' ? topic : "",
             difficulty,
             mode: examMode,
-            directory_path: (examMode === 'random_1' || examMode === 'simulacro_3') ? folderPath : null
+            directory_path: (examMode === 'random_1' || examMode === 'simulacro_3') ? folderPath : null,
+            aiEngine
         });
     };
 
@@ -86,10 +88,10 @@ export default function StartScreen({ onStart }) {
                                     disabled={isDisabled}
                                     title={isDisabled ? "Solo disponible en la App de Escritorio" : ""}
                                     className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-xs font-bold transition-all gap-1.5 ${examMode === mode.id
-                                            ? 'bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-blue-400 ring-1 ring-black/5 dark:ring-white/10'
-                                            : isDisabled
-                                                ? 'opacity-40 cursor-not-allowed grayscale text-slate-400'
-                                                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
+                                        ? 'bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-blue-400 ring-1 ring-black/5 dark:ring-white/10'
+                                        : isDisabled
+                                            ? 'opacity-40 cursor-not-allowed grayscale text-slate-400'
+                                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
                                         }`}
                                 >
                                     <mode.icon className="w-4 h-4" />
@@ -207,6 +209,47 @@ export default function StartScreen({ onStart }) {
                                     <option value="Intermedio">Intermedio</option>
                                     <option value="Experto">Experto</option>
                                 </select>
+                            </div>
+                        </div>
+
+                        {/* AI Engine Selector */}
+                        <div className="relative pt-2">
+                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
+                                Motor AI
+                            </label>
+                            <div className="grid grid-cols-3 gap-2 bg-slate-100 dark:bg-slate-800/50 p-1 rounded-xl">
+                                <button
+                                    onClick={() => setAiEngine('gemini')}
+                                    className={`flex items-center justify-center py-2 px-1 rounded-lg text-xs font-bold transition-all gap-1.5 ${aiEngine === 'gemini'
+                                            ? 'bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-blue-400 ring-1 ring-black/5 dark:ring-white/10'
+                                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
+                                        }`}
+                                >
+                                    <Zap className="w-3.5 h-3.5" />
+                                    <span>Gemini</span>
+                                </button>
+                                <button
+                                    onClick={() => setAiEngine('ollama')}
+                                    title="Ollama (Deepseek v3.2)"
+                                    className={`flex items-center justify-center py-2 px-1 rounded-lg text-xs font-bold transition-all gap-1.5 ${aiEngine === 'ollama'
+                                            ? 'bg-white dark:bg-slate-700 shadow text-purple-600 dark:text-purple-400 ring-1 ring-black/5 dark:ring-white/10'
+                                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
+                                        }`}
+                                >
+                                    <Server className="w-3.5 h-3.5" />
+                                    <span>Ollama</span>
+                                </button>
+                                <button
+                                    onClick={() => setAiEngine('groq')}
+                                    title="Groq Cloud (Llama 3.3 70B)"
+                                    className={`flex items-center justify-center py-2 px-1 rounded-lg text-xs font-bold transition-all gap-1.5 ${aiEngine === 'groq'
+                                            ? 'bg-white dark:bg-slate-700 shadow text-orange-600 dark:text-orange-400 ring-1 ring-black/5 dark:ring-white/10'
+                                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
+                                        }`}
+                                >
+                                    <CloudLightning className="w-3.5 h-3.5" />
+                                    <span>Groq Cloud</span>
+                                </button>
                             </div>
                         </div>
 

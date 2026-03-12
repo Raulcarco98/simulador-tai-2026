@@ -55,8 +55,8 @@ function App() {
     const formData = new FormData();
     formData.append("num_questions", settings.numQuestions);
     formData.append("difficulty", settings.difficulty || "Intermedio");
-
     formData.append("mode", settings.mode || "manual");
+    formData.append("ai_engine", settings.aiEngine || "gemini");
 
     if (settings.topic) {
       formData.append("topic", settings.topic);
@@ -290,7 +290,7 @@ function App() {
               <p className="text-slate-600 dark:text-slate-400 max-w-md">
                 {streamProgress > 0
                   ? `${streamProgress} / ${config?.numQuestions || '?'} preguntas generadas...`
-                  : "Conectando con Gemini. Esto puede tardar unos segundos."
+                  : "Conectando con la IA. Esto puede tardar unos segundos."
                 }
               </p>
               {streamProgress > 0 && (

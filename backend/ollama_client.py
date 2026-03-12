@@ -346,7 +346,7 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
                 }
                 
                 async with aiohttp.ClientSession() as session:
-                    async with session.post(OLLAMA_URL, json=payload, timeout=aiohttp.ClientTimeout(total=300)) as response:
+                    async with session.post(OLLAMA_URL, json=payload, timeout=aiohttp.ClientTimeout(total=600)) as response:
                         if response.status != 200:
                             error_text = await response.text()
                             raise Exception(f"Ollama returned HTTP {response.status}: {error_text}")
