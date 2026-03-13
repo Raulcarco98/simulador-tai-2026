@@ -5,7 +5,7 @@ import QuestionCard from "./QuestionCard";
 
 export default function Dashboard({ answers, questions, onRestart, onRetry }) {
     const [reviewFilter, setReviewFilter] = useState(null); // null | 'correct' | 'incorrect' | 'unanswered'
-    const [selectedDifficulty, setSelectedDifficulty] = useState("Intermedio");
+    const [selectedDifficulty, setSelectedDifficulty] = useState("Experto");
     // Logic: Correct - (Errors / 3)
     const correctCount = answers.filter(a => a.isCorrect).length;
     const incorrectCount = answers.filter(a => a.answered && !a.isCorrect).length;
