@@ -176,15 +176,8 @@ def shuffle_options(question):
         _safe_print(f"[SHUFFLE] Error barajando pregunta {question.get('id')}: {e}")
         
     return question
-
-
 def get_base_prompt(num_questions, difficulty, has_context=False):
-    # === REGLAS UNIVERSALES DE BLINDAJE (OPTIMIZADO) ===
-    # 1. UNICIDAD: 1 Verdadera, 3 Falsas.
-    # 2. EXCLUSION: Prohibido "Todas/Ninguna", "A y B".
-    # 3. OBJETIVIDAD: Falsas por dato, no interpretacion.
-    
-    # Requisitos dinámicos según el contexto
+    # Requirements for context
     requisitos_contexto = ""
     if has_context:
         requisitos_contexto = "- Cíñete ESTRICTAMENTE al texto proporcionado."
@@ -193,73 +186,55 @@ def get_base_prompt(num_questions, difficulty, has_context=False):
 
     if difficulty.upper() == "EXPERTO":
         return f"""
-    Rol: Examinador TAI C1. Genera {num_questions} preguntas obligatoriamente en formato JSON sin NADA mas.
-    
-    BLINDAJE RESPUESTA UNICA:
-    - REGLA: 1 Verdadera, 3 Falsas indiscutibles.
-    - PROHIBIDO: Compuestas ("Todas", "Ninguna", "A y B").
-    
-    DISTRACTORES (Falsas):
-    - Altera 1 dato objetivo (plazo, organo, condicion).
-    - No inventes normativa ni conceptos. Modifica los reales del texto.
-    
-    REQUISITOS:
-    - Temas: Practicos, sintaxis, excepciones.
-    - 25% Negativas.
+    OBJETIVO: Genera {num_questions} preguntas de nivel EXPERTO para oposiciones TAI C1.
     {requisitos_contexto}
-    
-    PROCESO (SELF-CORRECTION):
-    1. Piensa pregunta y Verdadera.
-    2. Genera 3 Falsas (dato alterado).
-    3. SELF-CHECK: Alguna falsa es defendible? Si -> Reescribela.
-    4. REDACTA explicacion: "La respuesta correcta es [Letra] porque...".
-    5. Verifica: Si dices "Es la B", correct_index=1.
 
-    JSON SCHEMA:
+    JSON SCHEMA (MANDATORIO):
     [
         {{
             "id": 1,
-            "question": "Texto",
+            "reasoning": "Breve análisis técnico del concepto antes de redactar (Chain of Thought).",
+            "question": "Enunciado complejo centrando en excepciones o casos prácticos.",
             "options": ["A", "B", "C", "D"],
             "correct_index": 0,
-            "explanation": "La respuesta correcta es A porque [Breve]..."
+            "explanation": "La respuesta correcta es A porque [Análisis detallado]..."
         }}
     ]
+
+    EXAMPLE (Expert Quality):
+    {{
+        "id": 0,
+        "reasoning": "La Ley 39/2015 establece plazos específicos para la subsanación. El artículo 68 indica 10 días, pero con posibilidad de ampliación de 5 días si no es procedimiento selectivo o de concurrencia competitiva.",
+        "question": "En un procedimiento administrativo común, no sujeto a concurrencia competitiva, se requiere al interesado la subsanación de una solicitud. ¿Cuál es el plazo máximo total de ampliación que podría otorgar la Administración si se cumplen las condiciones de dificultad técnica?",
+        "options": [
+            "10 días hábiles en total, no siendo posible la ampliación.",
+            "5 días hábiles, siempre que el plazo original no haya expirado.",
+            "15 días hábiles, sumando el plazo ordinario y la ampliación máxima.",
+            "La mitad del plazo ordinario, siempre que las circunstancias lo aconsejen."
+        ],
+        "correct_index": 1,
+        "explanation": "La respuesta correcta es B. Según el Art. 68 de la Ley 39/2015, el plazo de subsanación es de 10 días, ampliable en 5 días (un máximo del 50% según la regla general de ampliación de plazos del Art. 32) si la dificultad técnica lo requiere y no es concurrencia competitiva."
+    }}
     """
     
     # BASICO / INTERMEDIO (OPTIMIZADO)
     return f"""
-    Rol: Preparador Oposiciones. Test de {num_questions} preguntas obligatoriamente en formato JSON sin NADA mas.
-    
-    NIVEL: {difficulty.upper()}
-    
-    REGLAS (BLINDAJE):
-    1. 1 Correcta, 3 Falsas claras.
-    2. PROHIBIDO: "Todas/Ninguna correctas", "A y C".
-    3. FALSAS: Cambia 1 dato concreto.
-    
+    OBJETIVO: Preparador Oposiciones. Test de {num_questions} preguntas de nivel {difficulty.upper()}.
     {requisitos_contexto.replace("- Temas:", "REQUISITO:").replace("- ", "")}
-    
-    CRITERIO OBLIGATORIO:
-    - "explanation" DEBE empezar: "La respuesta correcta es [Letra]...".
-    
-    PROCESO:
-    1. Define Correcta.
-    2. Asegura 3 Falsas sin ambiguedad.
-    3. Explicacion: "La respuesta correcta es [Letra]..."
-    4. Asigna correct_index (0=A...).
     
     Formato JSON:
     [
         {{
             "id": 1,
+            "reasoning": "Lógica de la pregunta.",
             "question": "Enunciado...",
             "options": ["A", "B", "C", "D"],
             "correct_index": 0,
-            "explanation": "La respuesta correcta es A porque..."
+            "explanation": "La respuesta correcta es [Letra] porque..."
         }}
     ]
     """
+   
 
 
 # === STREAMING GENERATOR (Unified with Segmentation) ===
@@ -306,27 +281,37 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
              current_prompt += f"\n\nCONTEXTO TEMATICO: {topic}"
 
         if task["context"]:
-            # Limit context length per block if needed, though splitting helps handling limits naturally
-            # Using 25000 chars roughly per block if full doc is huge
             block_ctx = task["context"][:30000] 
-            # Use generic header to avoid confusing the model into writing "SegÃºn el fragmento..."
             current_prompt += f"\n\nDOCUMENTO NORMATIVO DE REFERENCIA:\n{block_ctx}"
             
             # STRICT CONTEXT INSTRUCTION (REFINED)
-            current_prompt += "\n\nâš ï¸  INSTRUCCION CRITICA DE JEFE DE TRIBUNAL:"
+            current_prompt += "\n\n⚠️ INSTRUCCION CRITICA DE JEFE DE TRIBUNAL:"
             
             if mode == "simulacro_3":
-                 current_prompt += "\n0. ESTÃ S ANTE UN SIMULACRO MULTITEMA (3 Bloques). Debes generar preguntas equilibradas (aprox. una cantidad igual por cada bloque temÃ¡tico)."
+                 current_prompt += "\n0. ESTÁS ANTE UN SIMULACRO MULTITEMA (3 Bloques). Debes generar preguntas equilibradas (aprox. una cantidad igual por cada bloque temático)."
             
-            current_prompt += "\n1. Genera las preguntas BASANDOTE UNICAMENTE EN EL TEXTO DE ARRIBA."
-            current_prompt += "\n2. IMPORTANTE: NO menciones 'el texto', 'el fragmento', 'la fuente' o 'el documento' en los enunciados. Formula la pregunta como si fuera un examen oficial."
-            current_prompt += "\n3. Si el texto es un fragmento, ignora el corte y pregunta solo sobre lo visible, PERO SIN MENCIONAR QUE ES UN FRAGMENTO."
+            current_prompt += """
+1. ESTRICTA ADHERENCIA: Solo puedes preguntar sobre la informacion PRESENTE en el documento.
+2. CERO INVENTIVA NORMATIVA: Si el documento enumera 3 requisitos, NO puedes inventar un 4o como distractor. Usa los datos del texto modificandolos sutilmente.
+3. CERO LITERALIDAD CIEGA: No uses frases de relleno como "segun el documento". Ve al grano.
+4. OBLIGATORIO: Genera exactamente el numero de preguntas solicitado.
+"""
             
             yield {"type": "log", "msg": f"[DEBUG] Bloque {task_idx+1}: Contexto de {len(block_ctx)} caracteres inyectado."}
         
         # Retry Loop for this Block
         block_success = False
         
+        system_prompt = """Eres un Examinador Senior para oposiciones TAI C1 (Tecnologías de la Información).
+Tu tarea es generar preguntas técnicas, precisas y difíciles que sigan estas reglas:
+1. UNICIDAD: 1 Verdadera, 3 Falsas indiscutibles.
+2. EXCLUSIÓN: Prohibido "Todas las anteriores", "A y B son correctas", etc.
+3. OBJETIVIDAD: Las opciones falsas deben ser erróneas por datos técnicos o legales, no por interpretación.
+4. RAZONAMIENTO: Antes de cada objeto JSON, desarrolla el campo 'reasoning' analizando la base legal o técnica para asegurar que no hay ambigüedad.
+5. EXPLICACIÓN: 'explanation' DEBE empezar siempre con 'La respuesta correcta es [Letra]...'.
+
+Solo respondes en JSON minificado (lista de objetos)."""
+
         # Start attempts
         for attempt in range(0, max_retries):
             try:
@@ -335,24 +320,26 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
                 
                 payload = {
                     "model": model_name,
-                    "prompt": current_prompt,
-                    "system": "Eres una API que responde estrictamente en JSON. NUNCA generes texto introductorio, markdown ni explicaciones fuera del JSON. Tu respuesta DEBE empezar con el caracter '[' y terminar con ']'.",
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": current_prompt}
+                    ],
                     "stream": False,
                     "options": {
-                        "temperature": 0.8,
-                        "top_p": 0.95,
+                        "temperature": 0.3, # Consistent with Groq
                         "num_predict": 4000
                     }
                 }
                 
+                # Ollama /api/chat is better for system instructions
                 async with aiohttp.ClientSession() as session:
-                    async with session.post(OLLAMA_URL, json=payload, timeout=aiohttp.ClientTimeout(total=600)) as response:
+                    async with session.post("http://127.0.0.1:11434/api/chat", json=payload, timeout=aiohttp.ClientTimeout(total=600)) as response:
                         if response.status != 200:
                             error_text = await response.text()
                             raise Exception(f"Ollama returned HTTP {response.status}: {error_text}")
                             
                         result = await response.json()
-                        raw_text = result.get("response", "")
+                        raw_text = result.get("message", {}).get("content", "")
         
                 yield {"type": "log", "msg": f"[Ollama] Respuesta recibida. Parseando JSON..."}
                 

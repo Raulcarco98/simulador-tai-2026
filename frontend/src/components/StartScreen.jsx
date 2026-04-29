@@ -11,7 +11,8 @@ export default function StartScreen({ onStart }) {
     const [difficulty, setDifficulty] = useState("Experto");
     const [examMode, setExamMode] = useState('manual'); // 'manual' | 'random_1' | 'simulacro_3'
     const [folderPath, setFolderPath] = useState("");
-    const [aiEngine, setAiEngine] = useState("gemini"); // "gemini" | "ollama" | "groq"
+    const [aiEngine, setAiEngine] = useState("groq"); // "gemini" | "local" | "groq"
+    const [localModel, setLocalModel] = useState("ollama"); // "ollama" | "lmstudio"
 
     const handleStart = () => {
         onStart({
@@ -22,7 +23,8 @@ export default function StartScreen({ onStart }) {
             difficulty,
             mode: examMode,
             directory_path: (examMode === 'random_1' || examMode === 'simulacro_3') ? folderPath : null,
-            aiEngine
+            aiEngine,
+            localModel
         });
     };
 
@@ -229,15 +231,15 @@ export default function StartScreen({ onStart }) {
                                     <span>Gemini</span>
                                 </button>
                                 <button
-                                    onClick={() => setAiEngine('ollama')}
-                                    title="Ollama (Deepseek v3.2)"
-                                    className={`flex items-center justify-center py-2 px-1 rounded-lg text-xs font-bold transition-all gap-1.5 ${aiEngine === 'ollama'
+                                    onClick={() => setAiEngine('local')}
+                                    title="Modelos en Local (Ollama o LMStudio)"
+                                    className={`flex items-center justify-center py-2 px-1 rounded-lg text-xs font-bold transition-all gap-1.5 ${aiEngine === 'local'
                                             ? 'bg-white dark:bg-slate-700 shadow text-purple-600 dark:text-purple-400 ring-1 ring-black/5 dark:ring-white/10'
                                             : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
                                         }`}
                                 >
                                     <Server className="w-3.5 h-3.5" />
-                                    <span>Ollama</span>
+                                    <span>Local</span>
                                 </button>
                                 <button
                                     onClick={() => setAiEngine('groq')}
@@ -251,6 +253,25 @@ export default function StartScreen({ onStart }) {
                                     <span>Groq Cloud</span>
                                 </button>
                             </div>
+
+                            {/* Sub-selector for Local Engine */}
+                            {aiEngine === 'local' && (
+                                <motion.div 
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="mt-3 p-3 bg-purple-500/5 border border-purple-500/20 rounded-xl flex items-center justify-between"
+                                >
+                                    <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase">Software Local:</span>
+                                    <select 
+                                        value={localModel}
+                                        onChange={(e) => setLocalModel(e.target.value)}
+                                        className="bg-transparent text-xs font-bold text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
+                                    >
+                                        <option value="ollama" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">Ollama (Deepseek 3.2)</option>
+                                        <option value="lmstudio" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">LMStudio (Qwen Veloz)</option>
+                                    </select>
+                                </motion.div>
+                            )}
                         </div>
 
                     </div>

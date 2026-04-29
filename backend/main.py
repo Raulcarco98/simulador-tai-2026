@@ -11,6 +11,7 @@ import io
 from gemini_client import generate_exam_streaming as generate_exam_gemini
 from ollama_client import generate_exam_streaming as generate_exam_ollama
 from groq_client import generate_exam_streaming as generate_exam_groq
+from lmstudio_client import generate_exam_streaming as generate_exam_lmstudio
 
 load_dotenv()
 
@@ -52,7 +53,8 @@ async def create_exam(
     directory_path: str = Form(None),
     mode: str = Form("manual"),
     ai_engine: str = Form("gemini"),
-    ollama_model: str = Form("deepseek-v3.2:cloud")
+    ollama_model: str = Form("deepseek-v3.2:cloud"),
+    local_model: str = Form("ollama")
 ):
     context_text = context
     selected_topics = []
@@ -154,8 +156,11 @@ async def create_exam(
              yield f"data: {json.dumps({'type': 'context', 'content': context_text})}\n\n"
 
         # Dynamically choose generator based on engine
-        if ai_engine == "ollama":
-            generator_source = generate_exam_ollama(num_questions, context_text, topic, difficulty, mode=mode, model_name=ollama_model)
+        if ai_engine == "ollama" or ai_engine == "local":
+            if local_model == "lmstudio":
+                generator_source = generate_exam_lmstudio(num_questions, context_text, topic, difficulty, mode=mode)
+            else:
+                generator_source = generate_exam_ollama(num_questions, context_text, topic, difficulty, mode=mode, model_name=ollama_model)
         elif ai_engine == "groq":
             generator_source = generate_exam_groq(num_questions, context_text, topic, difficulty, mode=mode)
         else:

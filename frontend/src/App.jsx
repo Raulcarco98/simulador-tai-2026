@@ -57,6 +57,9 @@ function App() {
     formData.append("difficulty", settings.difficulty || "Intermedio");
     formData.append("mode", settings.mode || "manual");
     formData.append("ai_engine", settings.aiEngine || "gemini");
+    if (settings.localModel) {
+      formData.append("local_model", settings.localModel);
+    }
 
     if (settings.topic) {
       formData.append("topic", settings.topic);
