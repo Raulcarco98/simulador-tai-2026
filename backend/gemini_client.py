@@ -45,7 +45,7 @@ generation_config = types.GenerateContentConfig(
     response_mime_type="application/json",
 )
 
-MODEL_NAME = "gemini-2.0-flash"
+MODEL_NAME = "gemini-3-flash-preview"
 
 
 # === UTILIDADES ===
@@ -387,12 +387,12 @@ async def generate_exam_streaming(num_questions: int, context_text: str = None, 
                 # === MODEL FALLBACK STRATEGY ===
                 # Intentos 0-1: gemini-3-flash-preview
                 # Intentos 2-3: gemini-2.5-flash
-                # Intentos 4-5: gemini-2.0-flash
+                # Intentos 4-5: gemini-3.1-flash-lite-preview
                 current_model = "gemini-3-flash-preview"
                 if attempt >= 2:
                     current_model = "gemini-2.5-flash"
                 if attempt >= 4:
-                    current_model = "gemini-2.0-flash"
+                    current_model = "gemini-3.1-flash-lite-preview"
                 
                 yield {"type": "log", "msg": f"[LOG] Intento {attempt+1}/{max_retries}: Llamando a {current_model} con {project_label}..."}
                 _safe_print(f"[{project_label}] Request start {current_model}...")

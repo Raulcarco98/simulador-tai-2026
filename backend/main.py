@@ -12,6 +12,7 @@ from gemini_client import generate_exam_streaming as generate_exam_gemini
 from ollama_client import generate_exam_streaming as generate_exam_ollama
 from groq_client import generate_exam_streaming as generate_exam_groq
 from lmstudio_client import generate_exam_streaming as generate_exam_lmstudio
+from openrouter_client import generate_exam_streaming as generate_exam_openrouter
 
 load_dotenv()
 
@@ -163,6 +164,8 @@ async def create_exam(
                 generator_source = generate_exam_ollama(num_questions, context_text, topic, difficulty, mode=mode, model_name=ollama_model)
         elif ai_engine == "groq":
             generator_source = generate_exam_groq(num_questions, context_text, topic, difficulty, mode=mode)
+        elif ai_engine == "openrouter":
+            generator_source = generate_exam_openrouter(num_questions, context_text, topic, difficulty, mode=mode)
         else:
             generator_source = generate_exam_gemini(num_questions, context_text, topic, difficulty, mode=mode)
 
