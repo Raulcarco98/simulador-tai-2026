@@ -151,7 +151,9 @@ async def save_questions_for_file(filename: str, questions: list) -> dict:
         statements = []
         
         try:
-            from semantic_engine import get_embedding, find_best_match
+            from semantic_engine import get_embedding, find_best_match, is_semantic_available
+            if not is_semantic_available():
+                raise RuntimeError("Desactivado en este entorno para ahorrar RAM (Render).")
             
             for q in candidates:
                 q_text = q.get("question", "")
@@ -194,8 +196,8 @@ async def save_questions_for_file(filename: str, questions: list) -> dict:
             if statements:
                 await client.batch(statements)
                 
-        except ImportError as e:
-            print(f"[BANCO] Semantic engine no disponible ({e}). Usando solo hash dedup.")
+        except Exception as e:
+            print(f"[BANCO] Semantic engine no disponible o desactivado ({e}). Usando solo hash dedup.")
             statements = []
             for q in candidates:
                 h = q.pop('temp_hash')
@@ -270,7 +272,9 @@ async def tag_duplicates(questions: list, filename: str) -> list:
         return questions
         
     try:
-        from semantic_engine import get_embedding, find_best_match
+        from semantic_engine import get_embedding, find_best_match, is_semantic_available
+        if not is_semantic_available():
+            raise RuntimeError("Desactivado en este entorno para ahorrar RAM (Render).")
         
         for q in questions:
             q_text = q.get("question", "")
@@ -285,7 +289,7 @@ async def tag_duplicates(questions: list, filename: str) -> list:
             match = find_best_match(new_emb, existing, threshold=SIMILARITY_THRESHOLD)
             q['is_already_in_bank'] = bool(match)
             
-    except ImportError:
+    except Exception as e:
         # If semantic engine fails, fall back to simple hash check
         for q in questions:
             h = _question_hash(q.get("question", ""))

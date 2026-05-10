@@ -2,12 +2,31 @@
 Semantic Engine — Local embedding model for intelligent question deduplication.
 Uses paraphrase-multilingual-MiniLM-L12-v2 (supports Spanish natively).
 Lazy-loaded: model only downloads/loads on first use, not at server start.
+Fully disabled in low-RAM environments like Render to prevent OOM crashes.
 """
 
+import os
 import numpy as np
 
 # Singleton — model loaded once on first call
 _model = None
+
+# Check if we should disable semantic engine (e.g. on Render or explicitly)
+DISABLE_SEMANTIC_ENGINE = (
+    os.environ.get("DISABLE_SEMANTIC_ENGINE", "").lower() == "true" or
+    os.environ.get("RENDER") is not None
+)
+
+def is_semantic_available() -> bool:
+    """Check if the semantic engine can be safely used in this environment."""
+    if DISABLE_SEMANTIC_ENGINE:
+        return False
+    try:
+        import sentence_transformers
+        return True
+    except ImportError:
+        return False
+
 
 def _get_model():
     """
@@ -16,6 +35,9 @@ def _get_model():
     Subsequent calls: returns cached instance instantly.
     """
     global _model
+    if DISABLE_SEMANTIC_ENGINE:
+        raise RuntimeError("Semantic engine is disabled on Render to prevent OOM (Out Of Memory) crashes.")
+        
     if _model is None:
         print("[SEMANTIC] Cargando modelo de embeddings (primera vez puede tardar)...")
         from sentence_transformers import SentenceTransformer
