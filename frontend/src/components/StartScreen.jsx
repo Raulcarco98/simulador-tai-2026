@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Play, Settings2, BookOpen, BarChart, FolderOpen, Dice5, Zap, Server, CloudLightning } from 'lucide-react';
+import { Play, Settings2, BookOpen, BarChart, FolderOpen, Dice5, Zap, Server, CloudLightning, Database, Sparkles } from 'lucide-react';
 import UploadZone from './UploadZone';
 
 export default function StartScreen({ onStart }) {
@@ -14,6 +14,48 @@ export default function StartScreen({ onStart }) {
     const [aiEngine, setAiEngine] = useState("gemini"); // "gemini" | "local" | "groq"
     const [localModel, setLocalModel] = useState("ollama"); // "ollama" | "lmstudio"
 
+    // Question Bank auto-detection
+    const [bankInfo, setBankInfo] = useState({ has_cache: false, available_count: 0 });
+    const [useBank, setUseBank] = useState(false);
+    const [bankLoading, setBankLoading] = useState(false);
+
+    const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+
+    // Auto-check bank when file changes (manual mode only)
+    useEffect(() => {
+        if (!file || examMode !== 'manual') {
+            setBankInfo({ has_cache: false, available_count: 0 });
+            setUseBank(false);
+            return;
+        }
+
+        let cancelled = false;
+        setBankLoading(true);
+
+        fetch(`${API_URL}/check-bank`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filename: file.name })
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (!cancelled) {
+                    setBankInfo(data);
+                    setUseBank(data.has_cache); // Default to bank if available
+                    setBankLoading(false);
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setBankInfo({ has_cache: false, available_count: 0 });
+                    setUseBank(false);
+                    setBankLoading(false);
+                }
+            });
+
+        return () => { cancelled = true; };
+    }, [file, examMode]);
+
     const handleStart = () => {
         onStart({
             numQuestions,
@@ -24,7 +66,8 @@ export default function StartScreen({ onStart }) {
             mode: examMode,
             directory_path: (examMode === 'random_1' || examMode === 'simulacro_3') ? folderPath : null,
             aiEngine,
-            localModel
+            localModel,
+            useBank: examMode === 'manual' && useBank && bankInfo.has_cache
         });
     };
 
@@ -113,8 +156,65 @@ export default function StartScreen({ onStart }) {
                             <>
                                 {/* 1. Upload */}
                                 <div className={topic ? "opacity-50 grayscale transition-all" : "transition-all"}>
-                                    <UploadZone onFileChange={setFile} />
+                                    <UploadZone onFileChange={(f) => {
+                                        setFile(f);
+                                        if (!f) {
+                                            setBankInfo({ has_cache: false, available_count: 0 });
+                                            setUseBank(false);
+                                        }
+                                    }} />
                                 </div>
+
+                                {/* Bank Detection Badge */}
+                                {file && !topic && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -8 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ duration: 0.3 }}
+                                    >
+                                        {bankLoading ? (
+                                            <div className="flex items-center gap-2 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-white/10 text-slate-400 text-xs font-medium">
+                                                <div className="w-3.5 h-3.5 border-2 border-slate-300 border-t-transparent rounded-full animate-spin" />
+                                                Comprobando banco de preguntas...
+                                            </div>
+                                        ) : bankInfo.has_cache ? (
+                                            <div className="space-y-3">
+                                                <div className="flex items-center gap-2 p-3 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl border border-emerald-200 dark:border-emerald-500/20">
+                                                    <Database className="w-4 h-4 text-emerald-500" />
+                                                    <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                                                        💾 {bankInfo.available_count} preguntas guardadas para "{file.name}"
+                                                    </span>
+                                                </div>
+
+                                                {/* Toggle: Usar Banco vs Generar con IA */}
+                                                <div className="grid grid-cols-2 gap-2 bg-slate-100 dark:bg-slate-800/50 p-1 rounded-xl">
+                                                    <button
+                                                        onClick={() => setUseBank(true)}
+                                                        className={`flex items-center justify-center py-2.5 px-2 rounded-lg text-xs font-bold transition-all gap-1.5 ${
+                                                            useBank
+                                                                ? 'bg-white dark:bg-slate-700 shadow text-emerald-600 dark:text-emerald-400 ring-1 ring-black/5 dark:ring-white/10'
+                                                                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
+                                                        }`}
+                                                    >
+                                                        <Database className="w-3.5 h-3.5" />
+                                                        <span>⚡ Usar banco</span>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setUseBank(false)}
+                                                        className={`flex items-center justify-center py-2.5 px-2 rounded-lg text-xs font-bold transition-all gap-1.5 ${
+                                                            !useBank
+                                                                ? 'bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-blue-400 ring-1 ring-black/5 dark:ring-white/10'
+                                                                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
+                                                        }`}
+                                                    >
+                                                        <Sparkles className="w-3.5 h-3.5" />
+                                                        <span>🤖 Generar con IA</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : null}
+                                    </motion.div>
+                                )}
 
                                 <div className="relative flex items-center justify-center">
                                     <div className="h-px bg-slate-200 dark:bg-white/10 w-full absolute"></div>

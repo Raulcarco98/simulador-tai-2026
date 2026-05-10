@@ -3,9 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 import os
 import json
+import random
 from dotenv import load_dotenv
 from pypdf import PdfReader
 import io
+from pydantic import BaseModel
+from typing import List, Optional
 
 # We import all generator methods
 from gemini_client import generate_exam_streaming as generate_exam_gemini
@@ -13,6 +16,7 @@ from ollama_client import generate_exam_streaming as generate_exam_ollama
 from groq_client import generate_exam_streaming as generate_exam_groq
 from lmstudio_client import generate_exam_streaming as generate_exam_lmstudio
 from openrouter_client import generate_exam_streaming as generate_exam_openrouter
+from question_bank import get_file_info, get_questions_for_file, save_questions_for_file, get_bank_stats
 
 load_dotenv()
 
@@ -44,6 +48,34 @@ def extract_text_from_pdf(file_bytes):
 def read_root():
     return {"message": "Simulador TAI 2026 API is running"}
 
+# === QUESTION BANK ENDPOINTS ===
+
+class CheckBankRequest(BaseModel):
+    filename: str
+
+class SaveToBankRequest(BaseModel):
+    filename: str
+    questions: List[dict]
+
+@app.post("/check-bank")
+def check_bank(req: CheckBankRequest):
+    """Check if there are cached questions for a given filename."""
+    info = get_file_info(req.filename)
+    print(f"[BANCO] Check: {req.filename} -> {info['available_count']} preguntas")
+    return info
+
+@app.post("/save-to-bank")
+def save_to_bank(req: SaveToBankRequest):
+    """Save selected questions to the bank for a given filename."""
+    result = save_questions_for_file(req.filename, req.questions)
+    print(f"[BANCO] Guardadas {result['saved_count']} preguntas para {req.filename} (total: {result['total_for_file']})")
+    return result
+
+@app.get("/bank-stats")
+def bank_stats():
+    """Get overall question bank statistics."""
+    return get_bank_stats()
+
 @app.post("/generate-exam")
 async def create_exam(
     file: UploadFile = File(None),
@@ -55,10 +87,45 @@ async def create_exam(
     mode: str = Form("manual"),
     ai_engine: str = Form("gemini"),
     ollama_model: str = Form("deepseek-v3.2:cloud"),
-    local_model: str = Form("ollama")
+    local_model: str = Form("ollama"),
+    use_bank: str = Form("false"),
+    source_filename: str = Form(None)
 ):
     context_text = context
     selected_topics = []
+
+    # Ensure source_filename is available for duplicate tagging
+    if not source_filename and file and file.filename:
+        source_filename = file.filename
+
+    # === QUESTION BANK: Serve from cache if requested ===
+    if use_bank.lower() == "true" and source_filename:
+        bank_questions = get_questions_for_file(source_filename)
+        if bank_questions:
+            # Select random subset if more than requested
+            if len(bank_questions) > num_questions:
+                selected = random.sample(bank_questions, num_questions)
+            else:
+                selected = list(bank_questions)
+            
+            # Assign sequential IDs
+            for i, q in enumerate(selected):
+                q["id"] = i + 1
+            
+            print(f"[BANCO] Sirviendo {len(selected)} de {len(bank_questions)} preguntas para {source_filename}")
+            
+            async def bank_stream():
+                yield f"data: {json.dumps({'type': 'log', 'msg': f'💾 [BANCO] Cargando {len(selected)} preguntas de {len(bank_questions)} disponibles para {source_filename}...'})}\n\n"
+                yield f"data: {json.dumps({'type': 'log', 'msg': '⚡ [BANCO] Sin llamada a IA. Carga instantánea.'})}\n\n"
+                yield f"data: {json.dumps({'type': 'from_bank', 'value': True})}\n\n"
+                yield f"data: {json.dumps(selected)}\n\n"
+                yield "data: [DONE]\n\n"
+            
+            return StreamingResponse(
+                bank_stream(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+            )
 
     # Helper function for reading fragments
     def get_file_fragment(filepath, chunk_size=3000):
@@ -91,7 +158,6 @@ async def create_exam(
     elif directory_path and (mode == "random_1" or mode == "simulacro_3" or mode == "random"): # 'random' for legacy compatibility
         try:
             import glob
-            import random
             
             files = glob.glob(os.path.join(directory_path, "*.md")) + \
                     glob.glob(os.path.join(directory_path, "*.txt")) + \
@@ -169,11 +235,15 @@ async def create_exam(
         else:
             generator_source = generate_exam_gemini(num_questions, context_text, topic, difficulty, mode=mode)
 
+        from question_bank import tag_duplicates
+
         async for item in generator_source:
             if isinstance(item, dict) and item.get("type") == "log":
                 yield f"data: {json.dumps(item)}\n\n"
             elif isinstance(item, list):
-                yield f"data: {json.dumps(item)}\n\n"
+                # Check bank and tag duplicates before sending to frontend
+                tagged_questions = tag_duplicates(item, source_filename)
+                yield f"data: {json.dumps(tagged_questions)}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(

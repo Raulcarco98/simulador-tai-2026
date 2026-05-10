@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle, XCircle, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
+import { CheckCircle, XCircle, ChevronLeft, ChevronRight, AlertTriangle, Bookmark } from "lucide-react";
 
 // Frontend coherence checker: detects if explanation letter mismatches correct_index
 function detectDiscrepancy(question) {
@@ -29,7 +29,10 @@ export default function QuestionCard({
     isFirst,
     isLast,
     onFinish,
-    isReview = false
+    isReview = false,
+    onToggleSave,
+    isSavedMarked = false,
+    isFromCache = false
 }) {
     const hasDiscrepancy = showResult && detectDiscrepancy(question);
 
@@ -101,6 +104,25 @@ export default function QuestionCard({
                             <div className="flex items-center gap-2 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 rounded-lg text-amber-700 dark:text-amber-300 text-xs">
                                 <AlertTriangle className="w-4 h-4 flex-shrink-0" />
                                 <span>Posible discrepancia detectada entre la explicación y la respuesta marcada.</span>
+                            </div>
+                        )}
+                        {/* Save to Bank Toggle — only when not from cache and not in review */}
+                        {!isFromCache && !isReview && onToggleSave && (
+                            <div className="mt-3 pt-3 border-t border-slate-200 dark:border-white/5 flex justify-end">
+                                <button
+                                    onClick={() => !question.is_already_in_bank && onToggleSave()}
+                                    disabled={question.is_already_in_bank}
+                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ${
+                                        question.is_already_in_bank
+                                            ? 'bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-500/20 cursor-not-allowed opacity-80'
+                                            : isSavedMarked
+                                                ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-500/30 shadow-sm'
+                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200'
+                                    }`}
+                                >
+                                    <Bookmark className={`w-3.5 h-3.5 transition-all ${question.is_already_in_bank ? 'fill-emerald-500 text-emerald-500' : isSavedMarked ? 'fill-amber-500 text-amber-500' : ''}`} />
+                                    {question.is_already_in_bank ? 'Ya en el banco' : isSavedMarked ? 'Guardada en banco' : 'Guardar en banco'}
+                                </button>
                             </div>
                         )}
                     </motion.div>

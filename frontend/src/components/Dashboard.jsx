@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { RefreshCcw, Home, ArrowLeft } from "lucide-react";
+import { RefreshCcw, Home, ArrowLeft, Bookmark } from "lucide-react";
 import QuestionCard from "./QuestionCard";
 
-export default function Dashboard({ answers, questions, onRestart, onRetry }) {
+export default function Dashboard({ answers, questions, onRestart, onRetry, bankSaveResult = null, isFromCache = false }) {
     const [reviewFilter, setReviewFilter] = useState(null); // null | 'correct' | 'incorrect' | 'unanswered'
     const [selectedDifficulty, setSelectedDifficulty] = useState("Experto");
     // Logic: Correct - (Errors / 3)
@@ -181,7 +181,49 @@ export default function Dashboard({ answers, questions, onRestart, onRetry }) {
                     <Home className="w-4 h-4" />
                     Volver al menú
                 </button>
+
+                {/* Auto-save notification */}
+                {bankSaveResult && (
+                    <div className="flex justify-center items-center gap-2 px-6 py-2.5 rounded-full font-semibold w-full md:w-auto bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/25 text-sm">
+                        <Bookmark className="w-4 h-4 fill-emerald-500" />
+                        {bankSaveResult.saved_count > 0
+                            ? `✅ ${bankSaveResult.saved_count} guardada${bankSaveResult.saved_count > 1 ? 's' : ''} automáticamente`
+                            : bankSaveResult.duplicates_skipped > 0
+                                ? `🧠 ${bankSaveResult.duplicates_skipped} ya estaban en el banco`
+                                : '✅ Banco actualizado'
+                        }
+                    </div>
+                )}
             </div>
+
+            {/* Semantic Duplicates Feedback */}
+            {bankSaveResult && bankSaveResult.semantic_duplicates && bankSaveResult.semantic_duplicates.length > 0 && (
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="w-full max-w-2xl mt-4 p-4 bg-amber-50 dark:bg-amber-900/15 border border-amber-200 dark:border-amber-700/30 rounded-xl"
+                >
+                    <h3 className="text-sm font-bold text-amber-700 dark:text-amber-300 mb-3 flex items-center gap-2">
+                        🧠 {bankSaveResult.semantic_duplicates.length} duplicado{bankSaveResult.semantic_duplicates.length > 1 ? 's' : ''} semántico{bankSaveResult.semantic_duplicates.length > 1 ? 's' : ''} descartado{bankSaveResult.semantic_duplicates.length > 1 ? 's' : ''}
+                    </h3>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {bankSaveResult.semantic_duplicates.map((d, i) => (
+                            <div key={i} className="text-xs text-amber-800 dark:text-amber-200/80 bg-amber-100/50 dark:bg-amber-900/20 p-2.5 rounded-lg border border-amber-200/50 dark:border-amber-700/20">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                    <span className="font-bold text-amber-600 dark:text-amber-400">≈ {Math.round(d.similarity * 100)}%</span>
+                                    <span className="text-amber-500">similar</span>
+                                </div>
+                                <div className="leading-relaxed">
+                                    <span className="opacity-70">Nueva: </span>"{d.new_question.length > 80 ? d.new_question.slice(0, 80) + '...' : d.new_question}"
+                                </div>
+                                <div className="leading-relaxed">
+                                    <span className="opacity-70">Ya guardada: </span>"{d.existing_question.length > 80 ? d.existing_question.slice(0, 80) + '...' : d.existing_question}"
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </motion.div>
+            )}
         </div>
     );
 }

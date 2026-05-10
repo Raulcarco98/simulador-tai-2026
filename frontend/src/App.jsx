@@ -22,6 +22,12 @@ function App() {
   const [lastContext, setLastContext] = useState(null);
   const terminalEndRef = useRef(null);
 
+  // Question Bank states
+  const [savedSelections, setSavedSelections] = useState([]);
+  const [sourceFilename, setSourceFilename] = useState(null);
+  const [isFromCache, setIsFromCache] = useState(false);
+  const [bankSaveResult, setBankSaveResult] = useState(null);
+
   // Load lastContext from localStorage
   useEffect(() => {
     const savedContext = localStorage.getItem("lastContext");
@@ -59,6 +65,19 @@ function App() {
     formData.append("ai_engine", settings.aiEngine || "gemini");
     if (settings.localModel) {
       formData.append("local_model", settings.localModel);
+    }
+
+    // Question Bank: always send filename for duplicate tagging
+    const fname = settings.file?.name || null;
+    setSourceFilename(fname);
+    if (fname) {
+      formData.append("source_filename", fname);
+    }
+    if (settings.useBank && fname) {
+      formData.append("use_bank", "true");
+      addLog(`💾 [BANCO] Modo banco activado para ${fname}`);
+    } else {
+      setIsFromCache(false);
     }
 
     if (settings.topic) {
@@ -132,6 +151,12 @@ function App() {
                 continue;
               }
 
+              // Bank flag event
+              if (parsed && parsed.type === "from_bank") {
+                setIsFromCache(true);
+                continue;
+              }
+
               // Question batch
               if (!Array.isArray(parsed)) {
                 addLog(`[WARN] Respuesta no es array: ${payload.slice(0, 200)}`);
@@ -150,6 +175,7 @@ function App() {
 
       if (allQuestions.length > 0) {
         setQuestions(allQuestions);
+        setSavedSelections(allQuestions.map(() => false));
         setAnswers(allQuestions.map(q => ({
           questionId: q.id,
           selectedOption: null,
@@ -201,18 +227,30 @@ function App() {
     }
   };
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
     setGameState("finished");
+    // Auto-save marked questions to bank
+    const markedCount = savedSelections.filter(Boolean).length;
+    if (!isFromCache && sourceFilename && markedCount > 0) {
+      const result = await handleSaveToBank();
+      if (result) {
+        setBankSaveResult(result);
+      }
+    }
   };
 
   const handleTimeUp = () => {
-    setGameState("finished");
+    handleFinish();
   };
 
   const handleRestart = () => {
     setGameState("start");
     setQuestions([]);
     setAnswers([]);
+    setSavedSelections([]);
+    setSourceFilename(null);
+    setIsFromCache(false);
+    setBankSaveResult(null);
     setCurrentQuestionIndex(0);
   };
 
@@ -226,6 +264,45 @@ function App() {
 
   const currentQuestion = questions[currentQuestionIndex];
   const currentAnswer = answers[currentQuestionIndex];
+
+  // Question Bank: toggle save for current question
+  const handleToggleSave = (index) => {
+    setSavedSelections(prev => {
+      const next = [...prev];
+      next[index] = !next[index];
+      return next;
+    });
+  };
+
+  // Question Bank: save marked questions to backend
+  const savedCount = savedSelections.filter(Boolean).length;
+
+  const handleSaveToBank = async () => {
+    if (!sourceFilename || savedCount === 0) return;
+    const toSave = questions.filter((_, i) => savedSelections[i]);
+    try {
+      const res = await fetch(`${API_URL}/save-to-bank`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: sourceFilename, questions: toSave })
+      });
+      const data = await res.json();
+      addLog(`✅ [BANCO] ${data.saved_count} preguntas guardadas (${data.duplicates_skipped} duplicadas ignoradas). Total para ${sourceFilename}: ${data.total_for_file}`);
+      
+      // Log semantic duplicates details
+      if (data.semantic_duplicates && data.semantic_duplicates.length > 0) {
+        addLog(`🧠 [SEMÁNTICO] ${data.semantic_duplicates.length} duplicados detectados por similitud de significado:`);
+        data.semantic_duplicates.forEach((d) => {
+          addLog(`   ≈ ${Math.round(d.similarity * 100)}% → "${d.new_question.slice(0, 70)}..." ≈ "${d.existing_question.slice(0, 70)}..."`);
+        });
+      }
+      
+      return data;
+    } catch (err) {
+      addLog(`❌ [BANCO] Error al guardar: ${err.message}`);
+      return null;
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#020617] text-slate-900 dark:text-slate-100 font-sans selection:bg-blue-500/30 overflow-x-hidden transition-colors duration-300">
@@ -335,6 +412,9 @@ function App() {
               isFirst={currentQuestionIndex === 0}
               isLast={currentQuestionIndex === questions.length - 1}
               onFinish={handleFinish}
+              onToggleSave={() => handleToggleSave(currentQuestionIndex)}
+              isSavedMarked={savedSelections[currentQuestionIndex] || false}
+              isFromCache={isFromCache}
             />
           )}
 
@@ -350,6 +430,8 @@ function App() {
                   setGameState("start");
                 }
               }}
+              bankSaveResult={bankSaveResult}
+              isFromCache={isFromCache}
             />
           )}
         </main>

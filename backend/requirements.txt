@@ -6,3 +6,5 @@ python-multipart
 pypdf
 aiohttp
 llama-cpp-python
+sentence-transformers>=3.0.0
+libsql-client
