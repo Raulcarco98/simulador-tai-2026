@@ -58,23 +58,23 @@ class SaveToBankRequest(BaseModel):
     questions: List[dict]
 
 @app.post("/check-bank")
-def check_bank(req: CheckBankRequest):
+async def check_bank(req: CheckBankRequest):
     """Check if there are cached questions for a given filename."""
-    info = get_file_info(req.filename)
+    info = await get_file_info(req.filename)
     print(f"[BANCO] Check: {req.filename} -> {info['available_count']} preguntas")
     return info
 
 @app.post("/save-to-bank")
-def save_to_bank(req: SaveToBankRequest):
+async def save_to_bank(req: SaveToBankRequest):
     """Save selected questions to the bank for a given filename."""
-    result = save_questions_for_file(req.filename, req.questions)
+    result = await save_questions_for_file(req.filename, req.questions)
     print(f"[BANCO] Guardadas {result['saved_count']} preguntas para {req.filename} (total: {result['total_for_file']})")
     return result
 
 @app.get("/bank-stats")
-def bank_stats():
+async def bank_stats():
     """Get overall question bank statistics."""
-    return get_bank_stats()
+    return await get_bank_stats()
 
 @app.post("/generate-exam")
 async def create_exam(
@@ -242,7 +242,7 @@ async def create_exam(
                 yield f"data: {json.dumps(item)}\n\n"
             elif isinstance(item, list):
                 # Check bank and tag duplicates before sending to frontend
-                tagged_questions = tag_duplicates(item, source_filename)
+                tagged_questions = await tag_duplicates(item, source_filename)
                 yield f"data: {json.dumps(tagged_questions)}\n\n"
         yield "data: [DONE]\n\n"
 

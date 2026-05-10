@@ -2,6 +2,7 @@
 Question Bank — Local cache for AI-generated questions.
 Saves questions linked to source files using Turso (libSQL) or local SQLite for efficiency.
 Includes semantic embeddings for intelligent deduplication.
+Fully asynchronous to prevent server and WebSocket deadlocks in production.
 """
 
 import os
@@ -19,7 +20,7 @@ LOCAL_DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "questi
 SIMILARITY_THRESHOLD = 0.85
 
 def _get_client() -> libsql_client.Client:
-    """Get a connection to the libSQL database (Turso or local)."""
+    """Get an async connection client to the libSQL database (Turso or local)."""
     db_url = os.environ.get("TURSO_DATABASE_URL")
     auth_token = os.environ.get("TURSO_AUTH_TOKEN")
     
@@ -27,13 +28,15 @@ def _get_client() -> libsql_client.Client:
         # Sanitize URL: use https:// instead of libsql:// for maximum compatibility (prevents WebSocket 505 errors)
         if db_url.startswith("libsql://"):
             db_url = db_url.replace("libsql://", "https://")
-        client = libsql_client.create_client_sync(db_url, auth_token=auth_token)
+        return libsql_client.create_client(db_url, auth_token=auth_token)
     else:
         # Fallback to local SQLite file
-        client = libsql_client.create_client_sync(f"file:{LOCAL_DB_FILE}")
+        return libsql_client.create_client(f"file:{LOCAL_DB_FILE}")
 
-    # Ensure tables exist
-    client.execute('''
+
+async def _ensure_tables(client: libsql_client.Client):
+    """Ensure tables and indexes exist on the database."""
+    await client.execute('''
         CREATE TABLE IF NOT EXISTS questions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             file_hash TEXT NOT NULL,
@@ -47,10 +50,8 @@ def _get_client() -> libsql_client.Client:
             saved_at TEXT NOT NULL
         )
     ''')
-    client.execute('CREATE INDEX IF NOT EXISTS idx_file_hash ON questions(file_hash)')
-    client.execute('CREATE INDEX IF NOT EXISTS idx_text_hash ON questions(text_hash)')
-    
-    return client
+    await client.execute('CREATE INDEX IF NOT EXISTS idx_file_hash ON questions(file_hash)')
+    await client.execute('CREATE INDEX IF NOT EXISTS idx_text_hash ON questions(text_hash)')
 
 
 def _row_to_dict(row, keys) -> dict:
@@ -69,12 +70,13 @@ def _question_hash(question_text: str) -> str:
     return hashlib.md5(question_text.strip().lower().encode("utf-8")).hexdigest()
 
 
-def get_questions_for_file(filename: str) -> list:
+async def get_questions_for_file(filename: str) -> list:
     """Get all saved questions for a given filename."""
     client = _get_client()
     try:
+        await _ensure_tables(client)
         file_hash = _get_file_key(filename)
-        rs = client.execute("SELECT * FROM questions WHERE file_hash = ?", [file_hash])
+        rs = await client.execute("SELECT * FROM questions WHERE file_hash = ?", [file_hash])
         
         results = []
         if rs.rows:
@@ -88,15 +90,16 @@ def get_questions_for_file(filename: str) -> list:
                 results.append(q)
         return results
     finally:
-        client.close()
+        await client.close()
 
 
-def get_file_info(filename: str) -> dict:
+async def get_file_info(filename: str) -> dict:
     """Check if a file has cached questions. Returns count and metadata."""
     client = _get_client()
     try:
+        await _ensure_tables(client)
         file_hash = _get_file_key(filename)
-        rs = client.execute("SELECT COUNT(*) as cnt FROM questions WHERE file_hash = ?", [file_hash])
+        rs = await client.execute("SELECT COUNT(*) as cnt FROM questions WHERE file_hash = ?", [file_hash])
         count = int(rs.rows[0]["cnt"]) if rs.rows else 0
         
         return {
@@ -105,10 +108,10 @@ def get_file_info(filename: str) -> dict:
             "filename": os.path.basename(filename)
         }
     finally:
-        client.close()
+        await client.close()
 
 
-def save_questions_for_file(filename: str, questions: list) -> dict:
+async def save_questions_for_file(filename: str, questions: list) -> dict:
     """
     Add questions to the bank for a file.
     Uses semantic deduplication: compares meaning, not just exact text.
@@ -116,11 +119,12 @@ def save_questions_for_file(filename: str, questions: list) -> dict:
     """
     client = _get_client()
     try:
+        await _ensure_tables(client)
         file_hash = _get_file_key(filename)
         basename = os.path.basename(filename)
         
         # 1. Get existing questions for dedup
-        existing_questions = get_questions_for_file(filename)
+        existing_questions = await get_questions_for_file(filename)
         existing_hashes = {q['text_hash'] for q in existing_questions}
         
         # Filter out exact duplicates first
@@ -188,7 +192,7 @@ def save_questions_for_file(filename: str, questions: list) -> dict:
                     existing_questions.append(q_copy)
                     
             if statements:
-                client.batch(statements)
+                await client.batch(statements)
                 
         except ImportError as e:
             print(f"[BANCO] Semantic engine no disponible ({e}). Usando solo hash dedup.")
@@ -210,9 +214,9 @@ def save_questions_for_file(filename: str, questions: list) -> dict:
                 ]))
                 saved_count += 1
             if statements:
-                client.batch(statements)
+                await client.batch(statements)
 
-        rs = client.execute("SELECT COUNT(*) as cnt FROM questions WHERE file_hash = ?", [file_hash])
+        rs = await client.execute("SELECT COUNT(*) as cnt FROM questions WHERE file_hash = ?", [file_hash])
         total_for_file = int(rs.rows[0]["cnt"]) if rs.rows else 0
         
         return {
@@ -222,14 +226,15 @@ def save_questions_for_file(filename: str, questions: list) -> dict:
             "total_for_file": total_for_file
         }
     finally:
-        client.close()
+        await client.close()
 
 
-def get_bank_stats() -> dict:
+async def get_bank_stats() -> dict:
     """Get overall bank statistics."""
     client = _get_client()
     try:
-        rs = client.execute("SELECT filename, COUNT(*) as count FROM questions GROUP BY file_hash")
+        await _ensure_tables(client)
+        rs = await client.execute("SELECT filename, COUNT(*) as count FROM questions GROUP BY file_hash")
         
         files = []
         total_questions = 0
@@ -247,10 +252,10 @@ def get_bank_stats() -> dict:
             "files": files
         }
     finally:
-        client.close()
+        await client.close()
 
 
-def tag_duplicates(questions: list, filename: str) -> list:
+async def tag_duplicates(questions: list, filename: str) -> list:
     """
     Check newly generated questions against the bank.
     Tags them with `is_already_in_bank` flag so frontend can disable saving.
@@ -258,7 +263,7 @@ def tag_duplicates(questions: list, filename: str) -> list:
     if not filename:
         return questions
         
-    existing = get_questions_for_file(filename)
+    existing = await get_questions_for_file(filename)
     if not existing:
         for q in questions:
             q['is_already_in_bank'] = False
