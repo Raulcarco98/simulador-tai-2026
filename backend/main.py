@@ -100,7 +100,7 @@ async def create_exam(
 
     # === QUESTION BANK: Serve from cache if requested ===
     if use_bank.lower() == "true" and source_filename:
-        bank_questions = get_questions_for_file(source_filename)
+        bank_questions = await get_questions_for_file(source_filename)
         if bank_questions:
             # Select random subset if more than requested
             if len(bank_questions) > num_questions:
